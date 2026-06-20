@@ -1,0 +1,33 @@
+# Environment variables
+.env
+.env.example
+
+# Credentials / Secrets
+client_secrets.json
+**/client_secrets.json
+credentials.json
+**/credentials.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Temp storage
+tmp/
+./tmp/
+logs/
+*.log

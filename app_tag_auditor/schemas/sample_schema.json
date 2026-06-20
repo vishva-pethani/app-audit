@@ -1,0 +1,22 @@
+[
+  {
+    "event_name": "screen_view",
+    "screen": "MainActivity",
+    "expected_params": {
+      "screen_name": "home_feed",
+      "user_status": "logged_in"
+    },
+    "trigger_description": "Fires automatically when MainActivity is loaded and displayed to the user.",
+    "keywords": ["MainActivity", "onCreate", "onResume", "screen_view"]
+  },
+  {
+    "event_name": "button_click_pay",
+    "screen": "CheckoutActivity",
+    "expected_params": {
+      "payment_method": "credit_card",
+      "amount": "100.00"
+    },
+    "trigger_description": "Fires when user taps the pay button inside the checkout screen.",
+    "keywords": ["pay_button", "click", "CheckoutActivity", "payment"]
+  }
+]
