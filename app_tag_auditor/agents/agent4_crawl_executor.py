@@ -31,7 +31,7 @@ class CrawlExecutorAgent:
     def _build_driver(self):
         """Initializes the Appium WebDriver driver connection."""
         from appium import webdriver
-        from appium.options.android.uiautomator2.UiAutomator2Options import UiAutomator2Options
+        from appium.options.android import UiAutomator2Options
 
         logger.info(f"Connecting to Appium server at {self.appium_server_url}...")
         options = UiAutomator2Options()
