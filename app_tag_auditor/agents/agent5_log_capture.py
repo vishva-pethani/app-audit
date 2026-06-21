@@ -28,27 +28,49 @@ class LogCaptureAgent:
         return cmd + list(args)
 
     def _parse_line(self, line: str) -> CapturedLog | None:
-        match = re.search(r'Logging event \(FE\): (\w+)\((.*)\)$', line.strip())
-        if not match:
-            return None
-        event_name, params_raw = match.group(1), match.group(2)
-        raw_params = {}
-        if params_raw:
-            for piece in params_raw.split(", "):
-                if "=" in piece:
-                    k, v = piece.split("=", 1)
-                    clean_k = re.sub(r'\(_\w+\)$', '', k.strip())
-                    if not clean_k.startswith("_"):
-                        raw_params[clean_k] = v.strip()
-        return CapturedLog(
-            event_name=event_name, raw_params=raw_params,
-            timestamp=datetime.now().isoformat(), source="logcat"
-        )
+        line_str = line.strip()
+        
+        # Format 1: Legacy/Developer logging format - Logging event (FE): event_name(params)
+        match1 = re.search(r'Logging event \(FE\): (\w+)\((.*)\)$', line_str)
+        if match1:
+            event_name, params_raw = match1.group(1), match1.group(2)
+            raw_params = {}
+            if params_raw:
+                for piece in params_raw.split(", "):
+                    if "=" in piece:
+                        k, v = piece.split("=", 1)
+                        clean_k = re.sub(r'\(_\w+\)$', '', k.strip())
+                        if not clean_k.startswith("_"):
+                            raw_params[clean_k] = v.strip()
+            return CapturedLog(
+                event_name=event_name, raw_params=raw_params,
+                timestamp=datetime.now().isoformat(), source="logcat"
+            )
+            
+        # Format 2: Real verbose device logging format - Logging event: origin=app,name=event_name(_vs),params=Bundle[[params]]
+        match2 = re.search(r'Logging event:\s*origin=\w+,\s*name=([\w_]+)(?:\(_\w+\))?,\s*params=Bundle\[\[(.*)\]\s*\]', line_str)
+        if match2:
+            event_name, params_raw = match2.group(1), match2.group(2)
+            raw_params = {}
+            if params_raw:
+                for piece in params_raw.split(","):
+                    if "=" in piece:
+                        k, v = piece.split("=", 1)
+                        clean_k = re.sub(r'\(_\w+\)$', '', k.strip())
+                        clean_v = v.strip().rstrip("]").strip()
+                        if not clean_k.startswith("_"):
+                            raw_params[clean_k] = clean_v
+            return CapturedLog(
+                event_name=event_name, raw_params=raw_params,
+                timestamp=datetime.now().isoformat(), source="logcat"
+            )
+            
+        return None
 
     def start_capture(self) -> None:
         subprocess.run(self._adb_cmd("logcat", "-c"), capture_output=True)
         self.process = subprocess.Popen(
-            self._adb_cmd("logcat", "-s", "FA:D", "FA-SVC:D"),
+            self._adb_cmd("logcat", "-s", "FA:V", "FA-SVC:V"),
             stdout=subprocess.PIPE, text=True, bufsize=1
         )
         self._queue = queue.Queue()
@@ -139,8 +161,8 @@ if __name__ == "__main__":
         sample_lines = [
             "D/FA: Logging event (FE): screen_view(_o=app, screenname(_pn)=My_RE_screen)",
             "D/FA: Logging event (FE): add_motorcycle(_o=app, screenname(_pn)=My_RE_screen)",
-            "D/FA: Logging event (FE): book_service(_o=app, clickText(_pn)=Book Now, modelName(_pn)=Super Meteor 650, sectionHeading(_pn)=Service Booking, screenname(_pn)=My_RE_screen)",
-            "D/FA: Logging event (FE): view_service_history(_o=app, clickText(_pn)=My Service History, modelName(_pn)=Himalayan 450, screenname(_pn)=My_RE_screen)"
+            "D/FA-SVC  : Logging event: origin=app,name=book_service,params=Bundle[[clickText=Book Now, modelName=Super Meteor 650, sectionHeading=Service Booking, screenname=My_RE_screen, ga_event_origin(_o)=app, manual_tracking(_mst)=1 ]]",
+            "D/FA-SVC  : Logging event: origin=app,name=view_service_history(_vs),params=Bundle[[clickText=My Service History, modelName=Himalayan 450, screenname=My_RE_screen ]]"
         ]
         agent = LogCaptureAgent()
         parsed = [agent._parse_line(line) for line in sample_lines if agent._parse_line(line)]
