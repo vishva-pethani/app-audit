@@ -6,7 +6,8 @@ google-api-python-client
 google-auth
 google-auth-httplib2
 openpyxl
-Appium-Python-Client
+Appium-Python-Client>=3.0.0
 requests
+
 pandas
 
