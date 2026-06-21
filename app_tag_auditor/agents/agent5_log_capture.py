@@ -127,7 +127,8 @@ class LogCaptureAgent:
                             current_param_val = ev_line_strip.split(":", 1)[1].replace('"', '').strip()
                     else:
                         if ev_line_strip.startswith("name:"):
-                            event_name = ev_line_strip.split(":", 1)[1].replace('"', '').strip()
+                            raw_event_name = ev_line_strip.split(":", 1)[1].replace('"', '').strip()
+                            event_name = re.sub(r'\(_\w+\)$', '', raw_event_name)
                 
                 log = CapturedLog(
                     event_name=event_name,
