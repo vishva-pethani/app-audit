@@ -94,38 +94,53 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     tele_val, run_val = TelemetryValidatorAgent(), RuntimeValidatorAgent()
     expected_names = {e.event_name for e in expected_events}
 
-    for plan in crawl_plans:
-        matching_event = next((e for e in expected_events if e.event_name == plan.event_name), None)
-        if not matching_event:
-            continue
+    executor = CrawlExecutorAgent(apk_path=apk_path)
+    try:
+        for plan in crawl_plans:
+            matching_event = next((e for e in expected_events if e.event_name == plan.event_name), None)
+            if not matching_event:
+                continue
 
-        log_agent.start_capture()
-        executor, exec_ok = None, False
-        try:
-            executor = CrawlExecutorAgent(apk_path=apk_path)
-            exec_ok = executor.execute_plan(plan)
-        except Exception as e:
-            logger.error(f"Execution error for plan {plan.event_name}: {e}")
-        finally:
-            if executor:
-                executor.quit()
-        
-        time.sleep(2)
-        log_agent.stop_capture()
+            log_agent.start_capture()
+            
+            # Restart the app fresh on the device before executing the next scenario
+            # (only if driver has already been built on a previous iteration)
+            if executor.driver is not None:
+                logger.info(f"Relaunching app {settings.ANDROID_APP_PACKAGE} to start scenario '{plan.event_name}' fresh...")
+                try:
+                    executor.driver.terminate_app(settings.ANDROID_APP_PACKAGE)
+                    time.sleep(1)
+                    executor.driver.activate_app(settings.ANDROID_APP_PACKAGE)
+                    time.sleep(4)
+                    executor._ensure_on_main_screen()
+                except Exception as e:
+                    logger.warning(f"Error restarting app between plans: {e}")
 
-        captured_for_plan = []
-        while not log_agent._queue.empty():
+            exec_ok = False
             try:
-                line = log_agent._queue.get_nowait()
-                log = log_agent._parse_line(line)
-                if log and log.event_name in expected_names:
-                    captured_for_plan.append(log)
-            except queue.Empty:
-                break
-        
-        all_captured_logs.extend(captured_for_plan)
-        all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
-        all_runtime.append(run_val.validate_execution(plan.event_name, plan, exec_ok, matching_event.user_action))
+                exec_ok = executor.execute_plan(plan)
+            except Exception as e:
+                logger.error(f"Execution error for plan {plan.event_name}: {e}")
+            
+            # Allow final analytics logs to flush to the adb buffer
+            time.sleep(3)
+            log_agent.stop_capture()
+
+            captured_for_plan = []
+            while not log_agent._queue.empty():
+                try:
+                    line = log_agent._queue.get_nowait()
+                    log = log_agent._parse_line(line)
+                    if log and log.event_name in expected_names:
+                        captured_for_plan.append(log)
+                except queue.Empty:
+                    break
+            
+            all_captured_logs.extend(captured_for_plan)
+            all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
+            all_runtime.append(run_val.validate_execution(plan.event_name, plan, exec_ok, matching_event.user_action))
+    finally:
+        executor.quit()
 
     log_agent.write_logs_to_output(all_captured_logs, writer)
     ValidationCombinerAgent().run(expected_events, all_telemetry, all_runtime, code_locations, writer)

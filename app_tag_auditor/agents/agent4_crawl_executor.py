@@ -32,15 +32,31 @@ class CrawlExecutorAgent:
         """Initializes the Appium WebDriver driver connection."""
         from appium import webdriver
         from appium.options.android import UiAutomator2Options
+        import subprocess
 
         logger.info(f"Connecting to Appium server at {self.appium_server_url}...")
         options = UiAutomator2Options()
         options.platform_name = "Android"
-        options.app = self.apk_path
-        options.app_package = self.app_package
         options.automation_name = "UiAutomator2"
+        options.app_package = self.app_package
+        options.app_activity = "com.royalenfield.reprime.SplashScreenActivity"
         options.no_reset = True
         options.auto_grant_permissions = True
+
+        # Check if the app is already installed to avoid reinstall/verification overhead
+        is_installed = False
+        try:
+            res = subprocess.run(["adb", "shell", "pm", "list", "packages", self.app_package], capture_output=True, text=True, timeout=5)
+            if self.app_package in res.stdout:
+                is_installed = True
+        except Exception as e:
+            logger.warning(f"Could not check if package is installed: {e}")
+
+        if not is_installed:
+            logger.info(f"App {self.app_package} not detected on device. Installing from {self.apk_path}...")
+            options.app = self.apk_path
+        else:
+            logger.info(f"App {self.app_package} is already installed. Launching existing app...")
 
         self.driver = webdriver.Remote(self.appium_server_url, options=options)
         logger.info("Appium driver successfully created and connected. Waiting 8s for splash screen to complete...")
