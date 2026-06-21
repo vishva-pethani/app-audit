@@ -222,9 +222,9 @@ class ValidationCombinerAgent:
                 
             analysis_rows_data.append({
                 "User Action": event.user_action,
-                "Screenname": event.screen,
+                "Screen Name": event.screen,
                 "Event Name": event.event_name,
-                "Parameters": ", ".join(p.param_name for p in event.expected_params),
+                "Event Parameters": ", ".join(p.param_name for p in event.expected_params),
                 "Parameter Type": ", ".join(p.parameter_type for p in event.expected_params),
                 "Data Type": ", ".join(p.data_type for p in event.expected_params),
                 "Principle": event.raw_principle,
@@ -253,21 +253,17 @@ class ValidationCombinerAgent:
         else:
             wb = openpyxl.Workbook()
             
-        # Delete only our summary and analysis worksheets if they exist to keep other sheets
-        for sname in ["Audit Summary", "Audit Analysis"]:
-            if sname in wb.sheetnames:
-                del wb[sname]
-                
-        # If 'Sheet' is still in sheets and we have other sheets, delete it
-        if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
-            try:
-                del wb["Sheet"]
-            except Exception:
-                pass
-            
         # Create worksheets
         ws_summary = wb.create_sheet(title="Audit Summary")
         ws_analysis = wb.create_sheet(title="Audit Analysis")
+            
+        # Delete all other worksheets to ensure we only have Audit Summary and Audit Analysis
+        for sname in list(wb.sheetnames):
+            if sname not in ["Audit Summary", "Audit Analysis"]:
+                try:
+                    del wb[sname]
+                except Exception:
+                    pass
         
         # 1. Populate Audit Summary
         ws_summary.append([]) # Blank Row 1
@@ -357,7 +353,7 @@ class ValidationCombinerAgent:
         
         # 2. Populate Audit Analysis
         headers = [
-            "User Action", "Screenname", "Event Name", "Parameters", 
+            "User Action", "Screen Name", "Event Name", "Event Parameters", 
             "Parameter Type", "Data Type", "Principle", 
             "Event Parameters Example Values", "Status", "Comments", "Runtime Evidence"
         ]
@@ -406,9 +402,9 @@ class ValidationCombinerAgent:
         # Column widths for analysis sheet
         widths = {
             "A": 30, # User Action
-            "B": 20, # Screenname
+            "B": 20, # Screen Name
             "C": 20, # Event Name
-            "D": 25, # Parameters
+            "D": 25, # Event Parameters
             "E": 18, # Parameter Type
             "F": 15, # Data Type
             "G": 35, # Principle

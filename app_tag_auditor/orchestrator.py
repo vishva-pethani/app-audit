@@ -57,12 +57,6 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
             raise ValueError("ANDROID_APP_PACKAGE is missing in .env and not found in manifest.")
             
     code_locations = CodebaseMapperAgent(decompiled_sources).run(expected_events)
-    writer.ensure_headers("CodebaseMapping", ["event_name", "file_path", "line_number", "matched_snippet", "breadcrumb", "confidence"])
-    for loc in code_locations:
-        writer.append_row("CodebaseMapping", {
-            "event_name": loc.event_name, "file_path": loc.file_path, "line_number": loc.line_number,
-            "matched_snippet": loc.matched_snippet, "breadcrumb": ", ".join(loc.breadcrumb), "confidence": loc.confidence
-        })
 
     # Step 3: Crawl Planning (Agent 3)
     crawl_plans = CrawlPlannerAgent().run(expected_events)
@@ -142,7 +136,6 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     finally:
         executor.quit()
 
-    log_agent.write_logs_to_output(all_captured_logs, writer)
     ValidationCombinerAgent().run(expected_events, all_telemetry, all_runtime, code_locations, writer)
     logger.info(f"Audit pipeline completed. Results written to: {settings.LOCAL_OUTPUT_PATH}")
 
@@ -153,9 +146,6 @@ def _run_synthetic_dry_run(expected_events: list, writer: LocalExcelWriter) -> N
         CapturedLog(event_name="add_motorcycle", raw_params={"screenname": "My_RE_screen"}, timestamp=datetime.now().isoformat(), source="logcat"),
         CapturedLog(event_name="book_service", raw_params={"clickText": "Book Now", "modelName": "Super Meteor 650", "sectionHeading": "Service Booking", "screenname": "My_RE_screen"}, timestamp=datetime.now().isoformat(), source="logcat")
     ]
-    log_agent = LogCaptureAgent()
-    log_agent.write_logs_to_output(mock_logs, writer)
-
     tele_val, run_val = TelemetryValidatorAgent(), RuntimeValidatorAgent()
     all_tele = tele_val.run(expected_events, mock_logs)
     

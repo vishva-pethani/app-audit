@@ -238,7 +238,8 @@ if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
         download_success = False
 
     if download_success:
-        st.info("Pipeline execution starting. Real-time console logs will display below:")
+        info_placeholder = st.empty()
+        info_placeholder.info("Pipeline execution starting. Real-time console logs will display below:")
         
         # Setup logging redirection to Streamlit UI
         root_logger = logging.getLogger()
@@ -252,6 +253,9 @@ if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
         try:
             run_pipeline(apk_path=apk_path, schema_path=schema_path)
             st.success("🎉 Audit pipeline completed successfully!")
+            # Clear logs container and starting info message once results are added
+            log_placeholder.empty()
+            info_placeholder.empty()
         except Exception as e:
             st.error(f"❌ Pipeline execution failed: {e}")
         finally:
