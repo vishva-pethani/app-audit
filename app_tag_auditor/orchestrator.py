@@ -126,15 +126,15 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
             time.sleep(3)
             log_agent.stop_capture()
 
-            captured_for_plan = []
+            captured_lines = []
             while not log_agent._queue.empty():
                 try:
-                    line = log_agent._queue.get_nowait()
-                    log = log_agent._parse_line(line)
-                    if log and log.event_name in expected_names:
-                        captured_for_plan.append(log)
+                    captured_lines.append(log_agent._queue.get_nowait())
                 except queue.Empty:
                     break
+
+            parsed_logs = log_agent.parse_lines(captured_lines)
+            captured_for_plan = [log for log in parsed_logs if log.event_name in expected_names]
             
             all_captured_logs.extend(captured_for_plan)
             all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
