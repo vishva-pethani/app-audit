@@ -1,6 +1,9 @@
 import sys
 import os
 import streamlit as st
+import pandas as pd
+import logging
+from google.oauth2.credentials import Credentials
 
 # Ensure the app_tag_auditor directory is in sys.path so core and frontend imports resolve correctly
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -9,6 +12,10 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from core.config import get_settings
+from core.drive_client import DriveClient
+from core.sheets_client import SheetsClient
+from frontend.components.drive_picker import render_drive_picker
+from orchestrator import run_pipeline
 
 st.set_page_config(
     page_title="App Tag Auditor",
@@ -78,40 +85,171 @@ html, body, [class*="css"] {
 st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">Automated Firebase Analytics APK Auditing System</div>', unsafe_allow_html=True)
 
-# File Upload Panel
-st.markdown('<h3 style="color: #ff8f00;">📁 Upload Target Android APK</h3>', unsafe_allow_html=True)
-uploaded_file = st.file_uploader("Upload APK", type=["apk"])
+class StreamlitLogHandler(logging.Handler):
+    def __init__(self, placeholder):
+        super().__init__()
+        self.placeholder = placeholder
+        self.log_buffer = []
 
-if uploaded_file is not None:
-    try:
-        settings = get_settings()
-        temp_dir = settings.TEMP_STORAGE_DIR
-        os.makedirs(temp_dir, exist_ok=True)
+    def emit(self, record):
+        msg = self.format(record)
+        self.log_buffer.append(msg)
+        self.placeholder.code("\n".join(self.log_buffer))
+
+# Two-column layout for file selections
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown('<h3 style="color: #ff8f00;">📁 Target Android APK</h3>', unsafe_allow_html=True)
+    apk_source = st.radio("Select APK Source", ["Local Upload", "Google Drive Picker"], key="apk_source")
+    
+    if apk_source == "Local Upload":
+        uploaded_apk = st.file_uploader("Upload APK file", type=["apk"])
+        if uploaded_apk is not None:
+            settings = get_settings()
+            temp_dir = settings.TEMP_STORAGE_DIR
+            os.makedirs(temp_dir, exist_ok=True)
+            local_apk_path = os.path.join(temp_dir, uploaded_apk.name)
+            with open(local_apk_path, "wb") as f:
+                f.write(uploaded_apk.getbuffer())
+            st.session_state["apk_path"] = local_apk_path
+            st.success(f"✅ Loaded Local APK: `{uploaded_apk.name}`")
+    else:
+        apk_drive = render_drive_picker(
+            key="apk",
+            label="Pick APK from Google Drive",
+            mime_types="application/vnd.android.package-archive"
+        )
+        if apk_drive:
+            st.info(f"Selected APK from Drive: `{apk_drive['file_name']}`")
+            st.session_state["apk_drive"] = apk_drive
+
+with col2:
+    st.markdown('<h3 style="color: #ff8f00;">📊 Event Schema Sheet</h3>', unsafe_allow_html=True)
+    schema_source = st.radio("Select Schema Source", ["Local Upload", "Google Drive Sheets Picker"], key="schema_source")
+    
+    if schema_source == "Local Upload":
+        uploaded_schema = st.file_uploader("Upload Schema file (CSV or Excel)", type=["csv", "xlsx", "xls"])
+        if uploaded_schema is not None:
+            settings = get_settings()
+            temp_dir = settings.TEMP_STORAGE_DIR
+            os.makedirs(temp_dir, exist_ok=True)
+            local_schema_path = os.path.join(temp_dir, uploaded_schema.name)
+            with open(local_schema_path, "wb") as f:
+                f.write(uploaded_schema.getbuffer())
+            st.session_state["schema_path"] = local_schema_path
+            st.success(f"✅ Loaded Local Schema: `{uploaded_schema.name}`")
+    else:
+        sheet_drive = render_drive_picker(
+            key="sheet",
+            label="Pick Google Sheet from Drive",
+            mime_types="application/vnd.google-apps.spreadsheet"
+        )
+        if sheet_drive:
+            st.info(f"Selected Sheet from Drive: `{sheet_drive['file_name']}`")
+            st.session_state["sheet_drive"] = sheet_drive
+
+# Run Pipeline Action Section
+st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
+
+if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
+    # Determine the paths
+    apk_path = st.session_state.get("apk_path")
+    schema_path = st.session_state.get("schema_path")
+    
+    # Check if we need to download from Google Drive first
+    download_success = True
+    temp_dir = get_settings().TEMP_STORAGE_DIR
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    if apk_source == "Google Drive Picker":
+        apk_drive = st.session_state.get("apk_drive")
+        if not apk_drive:
+            st.error("Please pick an APK from Google Drive.")
+            download_success = False
+        else:
+            with st.spinner(f"📥 Downloading APK from Google Drive: {apk_drive['file_name']}..."):
+                try:
+                    creds = Credentials(token=apk_drive["access_token"])
+                    drive_client = DriveClient(credentials=creds)
+                    dest_apk_path = os.path.join(temp_dir, apk_drive["file_name"])
+                    drive_client.download_file(apk_drive["file_id"], dest_apk_path)
+                    apk_path = dest_apk_path
+                except Exception as e:
+                    st.error(f"Failed to download APK: {e}")
+                    download_success = False
+
+    if schema_source == "Google Drive Sheets Picker" and download_success:
+        sheet_drive = st.session_state.get("sheet_drive")
+        if not sheet_drive:
+            st.error("Please pick a Google Sheet from Drive.")
+            download_success = False
+        else:
+            with st.spinner(f"📥 Downloading Google Sheet from Drive: {sheet_drive['file_name']}..."):
+                try:
+                    creds = Credentials(token=sheet_drive["access_token"])
+                    sheets_client = SheetsClient(credentials=creds)
+                    dest_sheet_path = os.path.join(temp_dir, f"{sheet_drive['file_name']}.xlsx")
+                    sheets_client.download_sheet_as_excel(sheet_drive["file_id"], dest_sheet_path)
+                    schema_path = dest_sheet_path
+                except Exception as e:
+                    st.error(f"Failed to download Google Sheet: {e}")
+                    download_success = False
+
+    if not apk_path:
+        st.error("Missing target APK file.")
+        download_success = False
+    if not schema_path:
+        st.error("Missing event schema file.")
+        download_success = False
+
+    if download_success:
+        st.info("Pipeline execution starting. Real-time console logs will display below:")
         
-        local_apk_path = os.path.join(temp_dir, uploaded_file.name)
-        with open(local_apk_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-            
-        st.session_state["apk_path"] = local_apk_path
-        st.success(f"✅ APK successfully uploaded and saved to: `{local_apk_path}`")
+        # Setup logging redirection to Streamlit UI
+        root_logger = logging.getLogger()
+        log_placeholder = st.empty()
+        handler = StreamlitLogHandler(log_placeholder)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        old_level = root_logger.level
+        root_logger.setLevel(logging.INFO)
+        root_logger.addHandler(handler)
+        
+        try:
+            run_pipeline(apk_path=apk_path, schema_path=schema_path)
+            st.success("🎉 Audit pipeline completed successfully!")
+        except Exception as e:
+            st.error(f"❌ Pipeline execution failed: {e}")
+        finally:
+            root_logger.removeHandler(handler)
+            root_logger.setLevel(old_level)
+
+# Display final results if they exist
+settings = get_settings()
+output_path = settings.LOCAL_OUTPUT_PATH
+
+if os.path.exists(output_path):
+    st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
+    st.markdown('<h3 style="color: #ff8f00;">📊 Audit Results Report</h3>', unsafe_allow_html=True)
+    
+    with open(output_path, "rb") as f:
+        st.download_button(
+            label="📥 Download Generated Excel Report",
+            data=f,
+            file_name="audit_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+    # Let's read and display the tabs from output excel file
+    try:
+        xl = pd.ExcelFile(output_path)
+        sheet_names = xl.sheet_names
+        
+        tabs = st.tabs(sheet_names)
+        for i, sheet_name in enumerate(sheet_names):
+            with tabs[i]:
+                df = pd.read_excel(output_path, sheet_name=sheet_name)
+                st.dataframe(df, use_container_width=True)
     except Exception as e:
-        st.error(f"❌ Failed to save uploaded APK: {e}")
-
-# Card displaying current stage details
-st.markdown("""
-<div class="glass-container">
-    <h2>🛠️ Local Execution Mode</h2>
-    <p style="font-size: 1.1rem; line-height: 1.6; color: #cbd5e1;">
-        The system is configured in Local Execution Mode. APK files are uploaded from the local filesystem 
-        and validation outputs are written directly to a local Excel spreadsheet.
-    </p>
-    <hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">
-    <h3 style="color: #ff8f00;">Current Milestones Completed</h3>
-    <div class="step-card">
-        <h4>📁 Local File System Integration</h4>
-        <p>Local file uploading has been enabled. Audit results are directed to the OutputWriter interface, mapping validation rows to a local Excel workbook.</p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-
+        st.warning(f"Could not load preview table for the Excel sheet: {e}")
