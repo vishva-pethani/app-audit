@@ -277,10 +277,40 @@ if os.path.exists(output_path):
         xl = pd.ExcelFile(output_path)
         sheet_names = xl.sheet_names
         
+        def style_status(val):
+            if val == "Implemented":
+                return "background-color: #E2EFDA; color: #375623; font-weight: bold;"
+            elif val == "Implemented with issues":
+                return "background-color: #FFF2CC; color: #7F6000; font-weight: bold;"
+            elif val == "Not Implemented":
+                return "background-color: #FADBD8; color: #78281F; font-weight: bold;"
+            return ""
+
         tabs = st.tabs(sheet_names)
         for i, sheet_name in enumerate(sheet_names):
             with tabs[i]:
-                df = pd.read_excel(output_path, sheet_name=sheet_name)
-                st.dataframe(df, use_container_width=True)
+                if sheet_name == "Audit Summary":
+                    try:
+                        df = pd.read_excel(output_path, sheet_name=sheet_name, header=3)
+                        df = df.dropna(how="all")
+                        st.markdown("#### 📊 App Tag Auditor - Audit Summary")
+                        if hasattr(df.style, "map"):
+                            styled_df = df.style.map(style_status, subset=["Static Status Category"])
+                        else:
+                            styled_df = df.style.applymap(style_status, subset=["Static Status Category"])
+                        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    except Exception as e:
+                        df = pd.read_excel(output_path, sheet_name=sheet_name)
+                        st.dataframe(df, use_container_width=True, hide_index=True)
+                else:
+                    df = pd.read_excel(output_path, sheet_name=sheet_name)
+                    if "Status" in df.columns:
+                        if hasattr(df.style, "map"):
+                            styled_df = df.style.map(style_status, subset=["Status"])
+                        else:
+                            styled_df = df.style.applymap(style_status, subset=["Status"])
+                        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df, use_container_width=True, hide_index=True)
     except Exception as e:
         st.warning(f"Could not load preview table for the Excel sheet: {e}")

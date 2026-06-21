@@ -50,6 +50,7 @@ class TelemetryValidationResult(BaseModel):
     mismatched_keys: list[str] = Field(default_factory=list)
     missing_keys: list[str] = Field(default_factory=list)
     extra_keys: list[str] = Field(default_factory=list)
+    matched_log: Optional[CapturedLog] = None
 
 class RuntimeValidationResult(BaseModel):
     event_name: str

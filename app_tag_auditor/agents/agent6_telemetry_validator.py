@@ -64,7 +64,8 @@ class TelemetryValidatorAgent:
                 passed=passed,
                 mismatched_keys=mismatched_keys,
                 missing_keys=missing_keys,
-                extra_keys=extra_keys
+                extra_keys=extra_keys,
+                matched_log=log
             )
 
             # If we find a fully passing log, we can return it immediately

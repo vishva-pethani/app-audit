@@ -27,7 +27,17 @@ logger = get_logger(__name__)
 
 def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = None, schema_path: str = "schemas/sample_schema.csv") -> None:
     logger.info(f"Starting pipeline for APK: {apk_path}")
-    settings, writer = get_settings(), LocalExcelWriter()
+    settings = get_settings()
+    
+    # Reset/clear previous output report to start fresh
+    if os.path.exists(settings.LOCAL_OUTPUT_PATH):
+        try:
+            os.remove(settings.LOCAL_OUTPUT_PATH)
+            logger.info(f"Cleared previous output report at {settings.LOCAL_OUTPUT_PATH}")
+        except Exception as e:
+            logger.warning(f"Could not clear old output report: {e}")
+            
+    writer = LocalExcelWriter()
 
     # Step 1: Schema Ingestion (Agent 1)
     expected_events = SchemaReaderAgent(schema_path=schema_path).run()
@@ -112,7 +122,7 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
         all_runtime.append(run_val.validate_execution(plan.event_name, plan, exec_ok, matching_event.user_action))
 
     log_agent.write_logs_to_output(all_captured_logs, writer)
-    ValidationCombinerAgent().run(expected_events, all_telemetry, all_runtime, writer)
+    ValidationCombinerAgent().run(expected_events, all_telemetry, all_runtime, code_locations, writer)
     logger.info(f"Audit pipeline completed. Results written to: {settings.LOCAL_OUTPUT_PATH}")
 
 def _run_synthetic_dry_run(expected_events: list, writer: LocalExcelWriter) -> None:
@@ -133,7 +143,7 @@ def _run_synthetic_dry_run(expected_events: list, writer: LocalExcelWriter) -> N
         mock_plan = CrawlPlan(event_name=e.event_name, steps=[CrawlStep(action_type="tap", target_selector="Mock", step_order=0)])
         all_run.append(run_val.validate_execution(e.event_name, mock_plan, True, e.user_action))
     
-    ValidationCombinerAgent().run(expected_events, all_tele, all_run, writer)
+    ValidationCombinerAgent().run(expected_events, all_tele, all_run, [], writer)
     logger.info("Synthetic validation completed.")
 
 if __name__ == "__main__":
