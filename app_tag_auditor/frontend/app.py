@@ -125,7 +125,10 @@ class StreamlitLogHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         self.log_buffer.append(msg)
-        self.placeholder.code("\n".join(self.log_buffer))
+        try:
+            self.placeholder.code("\n".join(self.log_buffer))
+        except Exception:
+            pass
 
 # Two-column layout for file selections
 col1, col2 = st.columns(2)
