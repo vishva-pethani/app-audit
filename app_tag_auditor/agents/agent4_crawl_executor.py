@@ -1,9 +1,10 @@
 import os
 import sys
 import time
-from typing import Literal
+import re
 from core.logger import get_logger
 from core.models import CrawlPlan, CrawlStep
+from core.config import get_settings
 
 logger = get_logger(__name__)
 
@@ -14,26 +15,70 @@ class CrawlExecutorAgent:
     by executing sequentially sorted CrawlPlan steps.
     """
     def __init__(self, apk_path: str, appium_server_url: str | None = None, app_package: str | None = None):
-        from core.config import get_settings
         settings = get_settings()
-        
         self.apk_path = apk_path
         self.appium_server_url = appium_server_url or settings.APPIUM_SERVER_URL
         self.app_package = app_package or settings.ANDROID_APP_PACKAGE
         
+        if not self.app_package and apk_path and os.path.exists(apk_path):
+            self.app_package = self._extract_package_name(apk_path)
+            
         if not self.app_package:
             raise ValueError(
-                "ANDROID_APP_PACKAGE must be defined in your .env file "
-                "or passed explicitly to CrawlExecutorAgent."
+                "ANDROID_APP_PACKAGE must be defined in your .env file, "
+                "passed explicitly to CrawlExecutorAgent, or extractable from a valid APK."
             )
         self.driver = None
+
+    def _extract_package_name(self, apk_path: str) -> str | None:
+        """Attempts to dynamically extract the Android package name from the APK file."""
+        import shutil, subprocess, hashlib
+        aapt = shutil.which("aapt")
+        if not aapt:
+            android_home = os.environ.get("ANDROID_HOME") or "/home/vishvapethani/Android/Sdk"
+            build_tools = os.path.join(android_home, "build-tools") if android_home else ""
+            if os.path.exists(build_tools):
+                for v in sorted(os.listdir(build_tools), reverse=True):
+                    cand = os.path.join(build_tools, v, "aapt")
+                    if os.path.exists(cand):
+                        aapt = cand
+                        break
+        if aapt:
+            try:
+                res = subprocess.run([aapt, "dump", "badging", apk_path], capture_output=True, text=True, check=True)
+                match = re.search(r"package:\s+name='([^']+)'", res.stdout)
+                if match:
+                    logger.info(f"Dynamically extracted package: '{match.group(1)}'")
+                    return match.group(1)
+            except Exception:
+                pass
+        try:
+            h = hashlib.sha1()
+            with open(apk_path, "rb") as f:
+                while chunk := f.read(8192):
+                    h.update(chunk)
+            cache_key = h.hexdigest()
+            paths = [
+                os.path.join(get_settings().TEMP_STORAGE_DIR, "decompiled", cache_key, "resources", "AndroidManifest.xml"),
+                os.path.join(get_settings().TEMP_STORAGE_DIR, "decompiled", cache_key, "AndroidManifest.xml")
+            ]
+            for path in paths:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    match = re.search(r'package="([^"]+)"', content)
+                    if match:
+                        logger.info(f"Extracted package from manifest: '{match.group(1)}'")
+                        return match.group(1)
+        except Exception:
+            pass
+        return None
 
     def _build_driver(self):
         """Initializes the Appium WebDriver driver connection."""
         from appium import webdriver
         from appium.options.android.uiautomator2.UiAutomator2Options import UiAutomator2Options
-
-        logger.info(f"Connecting to Appium server at {self.appium_server_url}...")
+        logger.info(f"Connecting to Appium at {self.appium_server_url} for package {self.app_package}...")
         options = UiAutomator2Options()
         options.platform_name = "Android"
         options.app = self.apk_path
@@ -41,7 +86,6 @@ class CrawlExecutorAgent:
         options.automation_name = "UiAutomator2"
         options.no_reset = True
         options.auto_grant_permissions = True
-
         self.driver = webdriver.Remote(self.appium_server_url, options=options)
         logger.info("Appium driver successfully created and connected.")
 
@@ -53,39 +97,26 @@ class CrawlExecutorAgent:
         from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
         wait = WebDriverWait(self.driver, 10)
-
-        if strategy == "text":
-            xpath_exact = f'//*[@text="{target_selector}"]'
-            try:
-                return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_exact)))
-            except (TimeoutException, NoSuchElementException):
-                xpath_contains = f'//*[contains(@text,"{target_selector}")]'
+        try:
+            if strategy == "text":
                 try:
-                    return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_contains)))
+                    return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, f'//*[@text="{target_selector}"]')))
                 except (TimeoutException, NoSuchElementException):
-                    raise NoSuchElementException(
-                        f"Could not find element matching text '{target_selector}'"
-                    )
-        elif strategy == "resource_id":
-            try:
+                    return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, f'//*[contains(@text,"{target_selector}")]')))
+            elif strategy == "resource_id":
                 return wait.until(EC.presence_of_element_located((AppiumBy.ID, target_selector)))
-            except TimeoutException:
-                raise NoSuchElementException(f"Resource ID '{target_selector}' not found within 10s.")
-        elif strategy in ("content_desc", "accessibility_id"):
-            try:
+            elif strategy in ("content_desc", "accessibility_id"):
                 return wait.until(EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, target_selector)))
-            except TimeoutException:
-                raise NoSuchElementException(f"Accessibility ID '{target_selector}' not found within 10s.")
-        else:
             raise ValueError(f"Unsupported selector strategy: {strategy}")
+        except TimeoutException:
+            raise NoSuchElementException(f"Element '{target_selector}' not found under {strategy} within 10s.")
 
     def execute_step(self, step: CrawlStep) -> bool:
         """Executes a single step action on the device UI."""
-        logger.info(f"Executing step {step.step_order}: {step.action_type} target={step.target_selector} strategy={step.selector_strategy}")
+        logger.info(f"Step {step.step_order}: {step.action_type} target={step.target_selector}")
         try:
             if step.action_type == "tap":
-                el = self._find_element_by_strategy(step.target_selector, step.selector_strategy)
-                el.click()
+                self._find_element_by_strategy(step.target_selector, step.selector_strategy).click()
             elif step.action_type == "input":
                 el = self._find_element_by_strategy(step.target_selector, step.selector_strategy)
                 el.clear()
@@ -93,41 +124,27 @@ class CrawlExecutorAgent:
             elif step.action_type == "wait":
                 time.sleep(2)
             elif step.action_type == "swipe":
-                logger.warning("Generic vertical swipe triggered (non-targeted fallback).")
                 size = self.driver.get_window_size()
-                width = size['width']
-                height = size['height']
-                self.driver.swipe(
-                    int(width * 0.5), int(height * 0.8),
-                    int(width * 0.5), int(height * 0.2),
-                    1000
-                )
+                w, h = size['width'], size['height']
+                self.driver.swipe(int(w * 0.5), int(h * 0.8), int(w * 0.5), int(h * 0.2), 1000)
             elif step.action_type == "back":
                 self.driver.back()
             else:
-                logger.error(f"Unknown action type: {step.action_type}")
                 return False
             return True
         except Exception as e:
-            logger.error(f"Step {step.step_order} execution failed: {e}")
+            logger.error(f"Step {step.step_order} failed: {e}")
             return False
 
     def execute_plan(self, plan: CrawlPlan) -> bool:
         """Runs the complete ordered steps in a CrawlPlan."""
         if self.driver is None:
             self._build_driver()
-
-        logger.info(f"Initiating CrawlPlan execution for event '{plan.event_name}'")
-        sorted_steps = sorted(plan.steps, key=lambda s: s.step_order)
-
-        for step in sorted_steps:
-            success = self.execute_step(step)
-            if not success:
-                logger.error(f"Step {step.step_order} failed. Terminating CrawlPlan.")
+        logger.info(f"Executing CrawlPlan for event '{plan.event_name}'")
+        for step in sorted(plan.steps, key=lambda s: s.step_order):
+            if not self.execute_step(step):
                 return False
-            time.sleep(1)  # Allow UI to settle
-            
-        logger.info(f"CrawlPlan for event '{plan.event_name}' completed successfully.")
+            time.sleep(1)
         return True
 
     def quit(self):
@@ -136,8 +153,8 @@ class CrawlExecutorAgent:
             logger.info("Closing Appium WebDriver session...")
             try:
                 self.driver.quit()
-            except Exception as e:
-                logger.warning(f"Error closing driver session: {e}")
+            except Exception:
+                pass
             self.driver = None
 
 if __name__ == "__main__":
@@ -155,15 +172,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     apk = sys.argv[1]
-
     from agents.agent1_schema_reader import SchemaReaderAgent
     from agents.agent3_crawl_planner import CrawlPlannerAgent
 
-    print("Loading expected events...")
     reader = SchemaReaderAgent()
     events = reader.run()
-
-    print("Generating crawl plans...")
     planner = CrawlPlannerAgent()
     plans = planner.run(events, current_screen="home")
 
@@ -171,9 +184,6 @@ if __name__ == "__main__":
         print("No crawl plans generated. Exiting.")
         sys.exit(0)
 
-    # Take ONLY the first plan as a demo.
-    # NOTE: Running multiple plans in sequence without resetting to a known screen
-    # is a known follow-up - each plan currently assumes starting from "home".
     first_plan = plans[0]
     print(f"Executing first crawl plan for event '{first_plan.event_name}' as a demo:")
     print(first_plan.model_dump_json(indent=2))
