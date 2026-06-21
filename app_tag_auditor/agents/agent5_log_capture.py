@@ -29,6 +29,7 @@ class LogCaptureAgent:
 
     def _parse_line(self, line: str) -> CapturedLog | None:
         line_str = line.strip()
+        logger.info(f"[LOG_PARSE_TRY] Parsing log line: {line_str}")
         
         # Format 1: Legacy/Developer logging format - Logging event (FE): event_name(params)
         match1 = re.search(r'Logging event \(FE\): (\w+)\((.*)\)$', line_str)
@@ -42,10 +43,12 @@ class LogCaptureAgent:
                         clean_k = re.sub(r'\(_\w+\)$', '', k.strip())
                         if not clean_k.startswith("_"):
                             raw_params[clean_k] = v.strip()
-            return CapturedLog(
+            log = CapturedLog(
                 event_name=event_name, raw_params=raw_params,
                 timestamp=datetime.now().isoformat(), source="logcat"
             )
+            logger.info(f"[LOG_PARSE_SUCCESS] Matched Format 1: {log}")
+            return log
             
         # Format 2: Real verbose device logging format - Logging event: origin=app,name=event_name(_vs),params=Bundle[[params]]
         match2 = re.search(r'Logging event:\s*origin=\w+,\s*name=([\w_]+)(?:\(_\w+\))?,\s*params=Bundle\[\[(.*)\]\s*\]', line_str)
@@ -60,14 +63,17 @@ class LogCaptureAgent:
                         clean_v = v.strip().rstrip("]").strip()
                         if not clean_k.startswith("_"):
                             raw_params[clean_k] = clean_v
-            return CapturedLog(
+            log = CapturedLog(
                 event_name=event_name, raw_params=raw_params,
                 timestamp=datetime.now().isoformat(), source="logcat"
             )
+            logger.info(f"[LOG_PARSE_SUCCESS] Matched Format 2: {log}")
+            return log
             
         return None
 
     def start_capture(self) -> None:
+        logger.info("[LOG_CAPTURE_START] Clearing logcat and starting background process...")
         subprocess.run(self._adb_cmd("logcat", "-c"), capture_output=True)
         self.process = subprocess.Popen(
             self._adb_cmd("logcat", "-s", "FA:V", "FA-SVC:V"),
@@ -77,9 +83,10 @@ class LogCaptureAgent:
         def reader():
             try:
                 for line in iter(self.process.stdout.readline, ''):
+                    logger.info(f"[LOG_CAPTURE_RAW] {line.strip()}")
                     self._queue.put(line)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Error in reader thread: {e}")
         self._thread = threading.Thread(target=reader, daemon=True)
         self._thread.start()
 
