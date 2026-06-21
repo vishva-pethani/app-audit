@@ -58,6 +58,17 @@ class CrawlExecutorAgent:
             # First, check and dismiss any popups
             self._dismiss_popups()
             
+            # Check if our app package is in the foreground
+            try:
+                curr_pkg = self.driver.current_package
+                if curr_pkg and curr_pkg != self.app_package:
+                    logger.info(f"App package {self.app_package} is not in foreground (currently {curr_pkg}). Relaunching...")
+                    self.driver.activate_app(self.app_package)
+                    time.sleep(4)
+                    continue
+            except Exception as e:
+                logger.warning(f"Could not check current package: {e}")
+            
             try:
                 # Use a zero-wait find to check if 'My RE' tab is visible
                 tab = self.driver.find_element(AppiumBy.ACCESSIBILITY_ID, "My RE")
@@ -75,6 +86,16 @@ class CrawlExecutorAgent:
                     return
             except NoSuchElementException:
                 pass
+
+            # Check if we are still on the splash screen activity
+            try:
+                curr_act = self.driver.current_activity
+                if curr_act and "SplashScreenActivity" in curr_act:
+                    logger.info(f"Still on splash screen ({curr_act}). Waiting 3s...")
+                    time.sleep(3)
+                    continue
+            except Exception as e:
+                logger.warning(f"Could not check current activity: {e}")
 
             logger.info(f"Main screen not detected (attempt {attempt + 1}/4). Pressing back button...")
             try:
