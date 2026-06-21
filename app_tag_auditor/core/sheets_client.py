@@ -130,14 +130,49 @@ class SheetsClient:
         Exports the entire spreadsheet as Excel (.xlsx) file bytes.
         """
         logger.info(f"Exporting spreadsheet: {sheet_id} as Excel")
-        export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-        headers = {"Authorization": f"Bearer {self.credentials.token}"}
+        token = getattr(self.credentials, 'token', None)
+        if not token:
+            raise ValueError("Credentials do not contain a valid OAuth token.")
+
+        headers = {"Authorization": f"Bearer {token}"}
         
-        response = requests.get(export_url, headers=headers)
+        # 1. Try Drive v3 Export API
+        export_url = f"https://www.googleapis.com/drive/v3/files/{sheet_id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        try:
+            response = requests.get(export_url, headers=headers)
+            if response.status_code == 200:
+                logger.info("Successfully exported spreadsheet via Drive API v3")
+                return response.content
+            else:
+                logger.warning(f"Drive API v3 export returned status code {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.warning(f"Error calling Drive API v3 export: {e}")
+
+        # 2. Fallback to direct export link
+        logger.info("Attempting direct spreadsheet export fallback link")
+        fallback_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+        response = requests.get(fallback_url, headers=headers)
         if response.status_code != 200:
-            raise Exception(f"Failed to export spreadsheet {sheet_id}: {response.text}")
+            raise Exception(f"Failed to export spreadsheet {sheet_id} using both APIs: HTTP {response.status_code} - {response.text}")
             
         return response.content
+
+    def download_sheet_as_excel(self, sheet_id: str, dest_path: str) -> str:
+        """
+        Downloads a Google Sheet as an Excel (.xlsx) file to the local filesystem path.
+        """
+        logger.info(f"Downloading Google Sheet '{sheet_id}' to '{dest_path}'")
+        excel_bytes = self.export_as_excel(sheet_id)
+        
+        dest_dir = os.path.dirname(os.path.abspath(dest_path))
+        if dest_dir:
+            os.makedirs(dest_dir, exist_ok=True)
+            
+        with open(dest_path, 'wb') as f:
+            f.write(excel_bytes)
+            
+        logger.info(f"Excel export saved: '{dest_path}'")
+        return dest_path
 
     @staticmethod
     def extract_sheet_id_from_url(url: str) -> str:
@@ -148,3 +183,4 @@ class SheetsClient:
         if match:
             return match.group(1)
         return url
+

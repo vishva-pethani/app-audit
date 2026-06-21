@@ -4,9 +4,10 @@ logger = get_logger(__name__)
 
 class ValidationCombinerAgent:
     """
-    Agent8 ValidationCombinerAgent:
+    Agent8    ValidationCombinerAgent:
     Merges TelemetryValidationResult + RuntimeValidationResult per event into a final,
-    consolidated FinalAuditRow, and writes the results to Google Sheets via SheetsClient.
+    consolidated FinalAuditRow, and writes the results to Google Sheets via the OutputWriter interface (LocalExcelWriter for now, swappable to SheetsClient later without changing this agent's logic).
+
     """
     def __init__(self, config=None):
         self.config = config

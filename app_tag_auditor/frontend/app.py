@@ -8,10 +8,10 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from frontend.components.drive_picker import render_drive_picker
+from core.config import get_settings
 
 st.set_page_config(
-    page_title="App Tag Auditor - Scaffolding",
+    page_title="App Tag Auditor",
     page_icon="🔍",
     layout="wide",
 )
@@ -78,38 +78,40 @@ html, body, [class*="css"] {
 st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">Automated Firebase Analytics APK Auditing System</div>', unsafe_allow_html=True)
 
-# Google Drive Picker Integration for testing
-st.markdown('<h3 style="color: #ff8f00;">📁 Select Target APK</h3>', unsafe_allow_html=True)
-drive_selection = render_drive_picker()
-if drive_selection:
-    masked_selection = {
-        "file_id": drive_selection["file_id"],
-        "file_name": drive_selection["file_name"],
-        "access_token": f"•••••••• (length: {len(drive_selection['access_token'])})"
-    }
-    st.success(f"✅ Selected: {drive_selection['file_name']}")
-    st.json(masked_selection)
+# File Upload Panel
+st.markdown('<h3 style="color: #ff8f00;">📁 Upload Target Android APK</h3>', unsafe_allow_html=True)
+uploaded_file = st.file_uploader("Upload APK", type=["apk"])
+
+if uploaded_file is not None:
+    try:
+        settings = get_settings()
+        temp_dir = settings.TEMP_STORAGE_DIR
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        local_apk_path = os.path.join(temp_dir, uploaded_file.name)
+        with open(local_apk_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+            
+        st.session_state["apk_path"] = local_apk_path
+        st.success(f"✅ APK successfully uploaded and saved to: `{local_apk_path}`")
+    except Exception as e:
+        st.error(f"❌ Failed to save uploaded APK: {e}")
 
 # Card displaying current stage details
 st.markdown("""
 <div class="glass-container">
-    <h2>🛠️ Scaffolding In Progress</h2>
+    <h2>🛠️ Local Execution Mode</h2>
     <p style="font-size: 1.1rem; line-height: 1.6; color: #cbd5e1;">
-        Scaffolding in progress — see Prompt 2 for Drive picker, Prompt 3 for full UI.
-    </p>
-    <p style="font-size: 1.1rem; line-height: 1.6; color: #cbd5e1;">
-        The system scaffold has been successfully initialized. The directory structure, core validation models, 
-        Google Drive/Sheets API integration clients, and agent stubs are ready for subsequent phases of implementation.
+        The system is configured in Local Execution Mode. APK files are uploaded from the local filesystem 
+        and validation outputs are written directly to a local Excel spreadsheet.
     </p>
     <hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">
-    <h3 style="color: #ff8f00;">Next Milestones</h3>
+    <h3 style="color: #ff8f00;">Current Milestones Completed</h3>
     <div class="step-card">
-        <h4>🔗 Phase 2: Drive Picker & Authentication</h4>
-        <p>Integrate client-side OAuth authentication using Google Identity Services (GIS) and Drive Picker to select the target APK.</p>
-    </div>
-    <div class="step-card">
-        <h4>🤖 Phase 3: Agent Orchestration & Interactive UI</h4>
-        <p>Implement smali code mapping, Appium crawl coordination, logcat validation engine, and full dashboard integration.</p>
+        <h4>📁 Local File System Integration</h4>
+        <p>Local file uploading has been enabled. Audit results are directed to the OutputWriter interface, mapping validation rows to a local Excel workbook.</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+

@@ -12,10 +12,12 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_CLIENT_ID: Optional[str] = None
     GOOGLE_OAUTH_CLIENT_SECRET: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
+    LOCAL_OUTPUT_PATH: str = "./output/audit_results.xlsx"
     APPIUM_SERVER_URL: str = "http://localhost:4723"
     ANDROID_APP_PACKAGE: Optional[str] = None
     TEMP_STORAGE_DIR: str = "./tmp"
     LLM_PROVIDER: str = "anthropic"
+
     ANTHROPIC_API_KEY: Optional[str] = None
     COMPANY_LLM_GATEWAY_URL: Optional[str] = None
     COMPANY_LLM_GATEWAY_API_KEY: Optional[str] = None

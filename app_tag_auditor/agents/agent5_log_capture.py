@@ -4,10 +4,11 @@ logger = get_logger(__name__)
 
 class LogCaptureAgent:
     """
-    Agent5 LogCaptureAgent:
+    Agent5    LogCaptureAgent:
     Tails `adb logcat` (filtered to Firebase debug view tags/events) during crawl
     execution, filtering to only relevant CapturedLog entries. It streams the captured
-    logs back to the Google Sheet via SheetsClient.
+    logs back to the Google Sheet via the OutputWriter interface (LocalExcelWriter for now, swappable to SheetsClient later without changing this agent's logic).
+
     """
     def __init__(self, config=None):
         self.config = config
