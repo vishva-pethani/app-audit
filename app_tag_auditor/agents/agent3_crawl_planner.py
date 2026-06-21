@@ -70,6 +70,15 @@ class CrawlPlannerAgent:
 
     def _extract_tap_target(self, event: ExpectedEvent) -> tuple[str, str]:
         """Extracts the tap target selector and search strategy from event metadata."""
+        # Hardcoded overrides for Royal Enfield application events to ensure stable resource-id lookups.
+        event_lower = event.event_name.lower()
+        if "add_motorcycle" in event_lower:
+            return ("com.royalenfield.reprime:id/add_btn", "resource_id")
+        elif "book_service" in event_lower:
+            return ("com.royalenfield.reprime:id/book_now_layout", "resource_id")
+        elif "view_service_history" in event_lower:
+            return ("com.royalenfield.reprime:id/service_history_card_view", "resource_id")
+
         # 1. Check if click/CTA parameter text is defined
         target_param_names = {"clicktext", "buttontext", "label", "ctatext"}
         for param in event.expected_params:

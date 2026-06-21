@@ -43,45 +43,130 @@ class CrawlExecutorAgent:
         options.auto_grant_permissions = True
 
         self.driver = webdriver.Remote(self.appium_server_url, options=options)
-        logger.info("Appium driver successfully created and connected.")
+        logger.info("Appium driver successfully created and connected. Waiting 8s for splash screen to complete...")
+        time.sleep(8)
+        self._ensure_on_main_screen()
+
+    def _ensure_on_main_screen(self):
+        """Checks if the main navigation tabs are visible, and presses back if they aren't."""
+        from appium.webdriver.common.appiumby import AppiumBy
+        from selenium.common.exceptions import NoSuchElementException
+
+        logger.info("Ensuring app is on the main screen...")
+        
+        for attempt in range(4):
+            # First, check and dismiss any popups
+            self._dismiss_popups()
+            
+            try:
+                # Use a zero-wait find to check if 'My RE' tab is visible
+                tab = self.driver.find_element(AppiumBy.ACCESSIBILITY_ID, "My RE")
+                if tab and tab.is_displayed():
+                    logger.info("Main screen tab 'My RE' is visible.")
+                    return
+            except NoSuchElementException:
+                pass
+
+            try:
+                # Also check text "My RE"
+                tab = self.driver.find_element(AppiumBy.XPATH, '//*[@text="My RE"]')
+                if tab and tab.is_displayed():
+                    logger.info("Main screen tab 'My RE' (by text) is visible.")
+                    return
+            except NoSuchElementException:
+                pass
+
+            logger.info(f"Main screen not detected (attempt {attempt + 1}/4). Pressing back button...")
+            try:
+                self.driver.back()
+                time.sleep(2)
+            except Exception as e:
+                logger.warning(f"Failed to press back: {e}")
+
+    def _dismiss_popups(self):
+        """Auto-dismisses known popups/dialogs to prevent UI lockout."""
+        from appium.webdriver.common.appiumby import AppiumBy
+        from selenium.common.exceptions import NoSuchElementException
+
+        # 1. App-specific login warning dialog close button
+        try:
+            close_btn = self.driver.find_element(AppiumBy.ID, "com.royalenfield.reprime:id/close_btn")
+            if close_btn and close_btn.is_displayed():
+                logger.info("Auto-dismiss: Found app login alert close button. Dismissing...")
+                close_btn.click()
+                time.sleep(1.5)
+        except NoSuchElementException:
+            pass
+        except Exception as e:
+            logger.warning(f"Error auto-dismissing popups: {e}")
+
+        # 2. System permissions dialogs (Notification, Location)
+        try:
+            for btn_text in ["Allow", "While using the app", "Only this time"]:
+                xpath = f'//*[@text="{btn_text}" and contains(@package, "permissioncontroller")]'
+                try:
+                    sys_btn = self.driver.find_element(AppiumBy.XPATH, xpath)
+                    if sys_btn and sys_btn.is_displayed():
+                        logger.info(f"Auto-dismiss: Found system permission button '{btn_text}'. Dismissing...")
+                        sys_btn.click()
+                        time.sleep(1.5)
+                except NoSuchElementException:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error checking system permission popups: {e}")
 
     def _find_element_by_strategy(self, target_selector: str, strategy: str):
-        """Finds elements using explicit waits and selector strategies."""
+        """Finds elements using explicit waits and selector strategies, with scroll fallback."""
         from appium.webdriver.common.appiumby import AppiumBy
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-        wait = WebDriverWait(self.driver, 10)
+        # Use a shorter wait first (e.g. 5 seconds) to allow fast fallback if scroll is needed
+        wait = WebDriverWait(self.driver, 5)
 
-        if strategy == "text":
-            xpath_exact = f'//*[@text="{target_selector}"]'
+        for attempt in range(2):
             try:
-                return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_exact)))
-            except (TimeoutException, NoSuchElementException):
-                xpath_contains = f'//*[contains(@text,"{target_selector}")]'
-                try:
-                    return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_contains)))
-                except (TimeoutException, NoSuchElementException):
+                if strategy == "text":
+                    xpath_exact = f'//*[@text="{target_selector}"]'
+                    try:
+                        return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_exact)))
+                    except (TimeoutException, NoSuchElementException):
+                        xpath_contains = f'//*[contains(@text,"{target_selector}")]'
+                        return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_contains)))
+                elif strategy == "resource_id":
+                    return wait.until(EC.presence_of_element_located((AppiumBy.ID, target_selector)))
+                elif strategy in ("content_desc", "accessibility_id"):
+                    return wait.until(EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, target_selector)))
+                else:
+                    raise ValueError(f"Unsupported selector strategy: {strategy}")
+            except (TimeoutException, NoSuchElementException) as err:
+                if attempt == 0:
+                    logger.info(f"Target '{target_selector}' not found on first try. Swiping up/scrolling down...")
+                    try:
+                        size = self.driver.get_window_size()
+                        width = size['width']
+                        height = size['height']
+                        self.driver.swipe(
+                            int(width * 0.5), int(height * 0.8),
+                            int(width * 0.5), int(height * 0.2),
+                            800
+                        )
+                        time.sleep(2)
+                    except Exception as swipe_err:
+                        logger.warning(f"Failed to swipe: {swipe_err}")
+                else:
                     raise NoSuchElementException(
-                        f"Could not find element matching text '{target_selector}'"
+                        f"Could not find element matching '{target_selector}' with strategy '{strategy}' even after scrolling."
                     )
-        elif strategy == "resource_id":
-            try:
-                return wait.until(EC.presence_of_element_located((AppiumBy.ID, target_selector)))
-            except TimeoutException:
-                raise NoSuchElementException(f"Resource ID '{target_selector}' not found within 10s.")
-        elif strategy in ("content_desc", "accessibility_id"):
-            try:
-                return wait.until(EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, target_selector)))
-            except TimeoutException:
-                raise NoSuchElementException(f"Accessibility ID '{target_selector}' not found within 10s.")
-        else:
-            raise ValueError(f"Unsupported selector strategy: {strategy}")
 
     def execute_step(self, step: CrawlStep) -> bool:
         """Executes a single step action on the device UI."""
         logger.info(f"Executing step {step.step_order}: {step.action_type} target={step.target_selector} strategy={step.selector_strategy}")
+        
+        # Pre-step popup cleanup
+        self._dismiss_popups()
+
         try:
             if step.action_type == "tap":
                 el = self._find_element_by_strategy(step.target_selector, step.selector_strategy)
@@ -91,7 +176,8 @@ class CrawlExecutorAgent:
                 el.clear()
                 el.send_keys(step.value or "")
             elif step.action_type == "wait":
-                time.sleep(2)
+                duration = int(step.value) if step.value else 2
+                time.sleep(duration)
             elif step.action_type == "swipe":
                 logger.warning("Generic vertical swipe triggered (non-targeted fallback).")
                 size = self.driver.get_window_size()
@@ -111,6 +197,9 @@ class CrawlExecutorAgent:
         except Exception as e:
             logger.error(f"Step {step.step_order} execution failed: {e}")
             return False
+        finally:
+            # Post-step popup cleanup
+            self._dismiss_popups()
 
     def execute_plan(self, plan: CrawlPlan) -> bool:
         """Runs the complete ordered steps in a CrawlPlan."""

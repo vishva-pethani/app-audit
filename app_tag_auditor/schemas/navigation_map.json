@@ -1,5 +1,5 @@
 {
   "My_RE_screen": [
-    {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "text"}
+    {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "accessibility_id"}
   ]
 }
