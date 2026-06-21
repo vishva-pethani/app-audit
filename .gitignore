@@ -31,3 +31,10 @@ tmp/
 ./tmp/
 logs/
 *.log
+
+# Local installations & outputs
+app_tag_auditor/bin/
+bin/
+app_tag_auditor/output/
+output/
+
