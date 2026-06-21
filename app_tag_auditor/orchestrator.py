@@ -83,7 +83,13 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     # Step 4 & 5: Execution + Log Capture
     all_captured_logs, all_telemetry, all_runtime = [], [], []
     log_agent = LogCaptureAgent()
+    
+    # Configure Android system properties to enable verbose Firebase Analytics logs
+    subprocess.run(log_agent._adb_cmd("shell", "setprop", "log.tag.FA", "VERBOSE"), capture_output=True)
+    subprocess.run(log_agent._adb_cmd("shell", "setprop", "log.tag.FA-SVC", "VERBOSE"), capture_output=True)
     subprocess.run(log_agent._adb_cmd("shell", "setprop", "debug.firebase.analytics.app", settings.ANDROID_APP_PACKAGE), capture_output=True)
+    # Force stop the app so it restarts with the new debug configurations active
+    subprocess.run(log_agent._adb_cmd("shell", "am", "force-stop", settings.ANDROID_APP_PACKAGE), capture_output=True)
 
     tele_val, run_val = TelemetryValidatorAgent(), RuntimeValidatorAgent()
     expected_names = {e.event_name for e in expected_events}
