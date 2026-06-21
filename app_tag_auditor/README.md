@@ -13,7 +13,16 @@ An automated solution to audit Firebase Analytics events in Android-only applica
 7. **Runtime Validator Agent (`agents.agent7_runtime_validator`)**: Confirms whether the target UI actions/triggers actually fired during run.
 8. **Validation Combiner Agent (`agents.agent8_validation_combiner`)**: Merges validation results into a consolidated report and writes to Google Sheets.
 
+
+## Prerequisites
+
+* **JADX Decompiler**: Required for real-APK decompilation. Install via:
+  * **macOS**: `brew install jadx`
+  * **GitHub**: [skylot/jadx](https://github.com/skylot/jadx)
+  Ensure `jadx` is available on your system `PATH`, or set `JADX_PATH` inside your `.env` configuration file pointing to your custom installation.
+
 ## Running the Project
+
 
 ### Scaffolding Verification
 To verify the stubs work and all dependencies resolve:
