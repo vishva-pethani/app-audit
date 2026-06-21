@@ -30,10 +30,13 @@ class CrawlStep(BaseModel):
     target_selector: str
     value: Optional[str] = None
     step_order: int
+    selector_strategy: Literal["text", "resource_id", "content_desc", "accessibility_id"] = "text"
 
 class CrawlPlan(BaseModel):
     event_name: str
     steps: list[CrawlStep] = Field(default_factory=list)
+    navigation_resolved: bool = True
+
 
 class CapturedLog(BaseModel):
     event_name: str
