@@ -119,7 +119,8 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    if device_connected:
+    force_synthetic = "--synthetic" in sys.argv
+    if device_connected and not force_synthetic:
         print("=== LIVE ADB CAPTURE MODE ===")
         from agents.agent1_schema_reader import SchemaReaderAgent
         events = SchemaReaderAgent().run()
