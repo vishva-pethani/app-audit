@@ -1,12 +1,21 @@
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
+class ExpectedParam(BaseModel):
+    param_name: str
+    parameter_type: str
+    data_type: str
+    principle: str
+    example_value: str
+
 class ExpectedEvent(BaseModel):
     event_name: str
     screen: str
-    expected_params: dict[str, Any] = Field(default_factory=dict)
-    trigger_description: str
+    user_action: str
+    expected_params: list[ExpectedParam] = Field(default_factory=list)
+    raw_principle: str
     keywords: list[str] = Field(default_factory=list)
+
 
 class CodeLocation(BaseModel):
     event_name: str
