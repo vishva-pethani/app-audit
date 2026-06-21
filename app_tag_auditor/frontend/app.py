@@ -11,6 +11,31 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# Hot reload modules to handle Streamlit process caching
+import importlib
+modules_to_reload = [
+    "core.config",
+    "core.drive_client",
+    "core.sheets_client",
+    "core.output_writer",
+    "orchestrator",
+    "agents.agent3_crawl_planner",
+    "agents.agent4_crawl_executor"
+]
+for mod_name in modules_to_reload:
+    if mod_name in sys.modules:
+        try:
+            importlib.reload(sys.modules[mod_name])
+        except Exception:
+            pass
+
+# Clear cache of get_settings
+try:
+    import core.config
+    core.config.get_settings.cache_clear()
+except Exception:
+    pass
+
 from core.config import get_settings
 from core.drive_client import DriveClient
 from core.sheets_client import SheetsClient
