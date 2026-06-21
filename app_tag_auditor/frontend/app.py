@@ -11,19 +11,25 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Hot reload modules to handle Streamlit process caching
+# Hot reload all local modules to handle Streamlit process caching
 import importlib
-modules_to_reload = [
-    "core.config",
-    "core.drive_client",
-    "core.sheets_client",
-    "core.output_writer",
-    "orchestrator",
-    "agents.agent3_crawl_planner",
-    "agents.agent4_crawl_executor"
+import sys
+
+# Find all loaded local modules
+local_modules = [
+    name for name in sys.modules
+    if name.startswith("core") or name.startswith("agents") or name == "orchestrator"
 ]
-for mod_name in modules_to_reload:
-    if mod_name in sys.modules:
+
+# Reload core.config first so other modules get the new config reference when reloaded
+if "core.config" in sys.modules:
+    try:
+        importlib.reload(sys.modules["core.config"])
+    except Exception:
+        pass
+    
+for mod_name in local_modules:
+    if mod_name != "core.config" and mod_name in sys.modules:
         try:
             importlib.reload(sys.modules[mod_name])
         except Exception:
