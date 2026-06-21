@@ -62,8 +62,8 @@ class CrawlPlannerAgent:
     def _is_passive_event(self, user_action: str) -> bool:
         """Determines if the event fires automatically without direct tap interaction."""
         ua = user_action.lower()
-        passives = ["lands on", "navigates to", "opens", "views"]
-        actives = ["click", "tap", "select"]
+        passives = ["lands on", "navigates to", "opens", "views", "loads", "load", "shown", "appears", "launches", "launch"]
+        actives = ["click", "tap", "select", "interact", "press"]
         has_passive = any(p in ua for p in passives)
         has_active = any(a in ua for a in actives)
         return has_passive and not has_active
@@ -94,6 +94,8 @@ class CrawlPlannerAgent:
         )
         if match:
             captured = match.group(1).strip()
+            if (captured.startswith('"') and captured.endswith('"')) or (captured.startswith("'") and captured.endswith("'")):
+                captured = captured[1:-1].strip()
             if captured:
                 return (captured, "text")
 
@@ -118,6 +120,7 @@ class CrawlPlannerAgent:
 
         return CrawlPlan(
             event_name=event.event_name,
+            screen=event.screen,
             steps=steps,
             navigation_resolved=resolved
         )

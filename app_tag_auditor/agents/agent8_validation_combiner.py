@@ -195,8 +195,8 @@ class ValidationCombinerAgent:
             code_locations = []
             output_writer = arg5
             
-        telemetry_map = {res.event_name: res for res in telemetry_results}
-        runtime_map = {res.event_name: res for res in runtime_results}
+        telemetry_map = {(res.event_name, res.screen): res for res in telemetry_results}
+        runtime_map = {(res.event_name, res.screen): res for res in runtime_results}
         code_map = {loc.event_name for loc in code_locations}
 
         final_rows = []
@@ -207,8 +207,8 @@ class ValidationCombinerAgent:
         analysis_rows_data = []
 
         for event in expected_events:
-            telemetry = telemetry_map.get(event.event_name)
-            runtime = runtime_map.get(event.event_name)
+            telemetry = telemetry_map.get((event.event_name, event.screen))
+            runtime = runtime_map.get((event.event_name, event.screen))
             has_code_mapping = (event.event_name in code_map)
             
             status, comments, evidence = _evaluate_event(event, telemetry, runtime, has_code_mapping)
@@ -253,9 +253,17 @@ class ValidationCombinerAgent:
         else:
             wb = openpyxl.Workbook()
             
-        # Delete existing worksheets so we only keep our two new clean tabs
-        for sname in list(wb.sheetnames):
-            del wb[sname]
+        # Delete only our summary and analysis worksheets if they exist to keep other sheets
+        for sname in ["Audit Summary", "Audit Analysis"]:
+            if sname in wb.sheetnames:
+                del wb[sname]
+                
+        # If 'Sheet' is still in sheets and we have other sheets, delete it
+        if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
+            try:
+                del wb["Sheet"]
+            except Exception:
+                pass
             
         # Create worksheets
         ws_summary = wb.create_sheet(title="Audit Summary")
@@ -414,6 +422,17 @@ class ValidationCombinerAgent:
             
         ws_analysis.views.sheetView[0].showGridLines = True
         
+        # Reorder sheets to put "Audit Summary" and "Audit Analysis" first
+        preferred_order = ["Audit Summary", "Audit Analysis"]
+        new_sheets = []
+        for name in preferred_order:
+            if name in wb.sheetnames:
+                new_sheets.append(wb[name])
+        for name in wb.sheetnames:
+            if name not in preferred_order:
+                new_sheets.append(wb[name])
+        wb._sheets = new_sheets
+        
         # Save Excel File
         wb.save(file_path)
         
@@ -445,11 +464,11 @@ if __name__ == "__main__":
     # 2. Mock Telemetry Validation Results
     mock_telemetry = [
         TelemetryValidationResult(
-            event_name="login", passed=True, mismatched_keys=[], missing_keys=[], extra_keys=[],
+            event_name="login", screen="LoginScreen", passed=True, mismatched_keys=[], missing_keys=[], extra_keys=[],
             matched_log=CapturedLog(event_name="login", raw_params={"method": "google"}, timestamp=datetime.now().isoformat(), source="logcat")
         ),
         TelemetryValidationResult(
-            event_name="book_service", passed=False, mismatched_keys=["modelName"], missing_keys=[], extra_keys=["extra_param"],
+            event_name="book_service", screen="ServiceScreen", passed=False, mismatched_keys=["modelName"], missing_keys=[], extra_keys=["extra_param"],
             matched_log=CapturedLog(event_name="book_service", raw_params={"modelName": "Himalayan 450", "extra_param": "val"}, timestamp=datetime.now().isoformat(), source="logcat")
         )
         # click_settings has no telemetry result (absent)
@@ -457,9 +476,9 @@ if __name__ == "__main__":
     
     # 3. Mock Runtime Validation Results
     mock_runtime = [
-        RuntimeValidationResult(event_name="login", passed=True, expected_trigger="Tap Login", actual_trigger_observed=True, notes="Interaction succeeded"),
-        RuntimeValidationResult(event_name="book_service", passed=True, expected_trigger="Tap Book Now", actual_trigger_observed=True, notes="Interaction succeeded"),
-        RuntimeValidationResult(event_name="click_settings", passed=False, expected_trigger="Tap Settings", actual_trigger_observed=False, notes="Failed to find settings button")
+        RuntimeValidationResult(event_name="login", screen="LoginScreen", passed=True, expected_trigger="Tap Login", actual_trigger_observed=True, notes="Interaction succeeded"),
+        RuntimeValidationResult(event_name="book_service", screen="ServiceScreen", passed=True, expected_trigger="Tap Book Now", actual_trigger_observed=True, notes="Interaction succeeded"),
+        RuntimeValidationResult(event_name="click_settings", screen="SettingsScreen", passed=False, expected_trigger="Tap Settings", actual_trigger_observed=False, notes="Failed to find settings button")
     ]
     
     # 4. Mock Code Locations (only click_settings is found in code statically, book_service and login are also found)

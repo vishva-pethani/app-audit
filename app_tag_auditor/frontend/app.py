@@ -280,6 +280,10 @@ if os.path.exists(output_path):
         xl = pd.ExcelFile(output_path)
         sheet_names = xl.sheet_names
         
+        # Sort sheet names so Audit Summary and Audit Analysis are shown first
+        preferred_order = ["Audit Summary", "Audit Analysis"]
+        sorted_sheet_names = [s for s in preferred_order if s in sheet_names] + [s for s in sheet_names if s not in preferred_order]
+        
         def style_status(val):
             if val == "Implemented":
                 return "background-color: #E2EFDA; color: #375623; font-weight: bold;"
@@ -289,8 +293,8 @@ if os.path.exists(output_path):
                 return "background-color: #FADBD8; color: #78281F; font-weight: bold;"
             return ""
 
-        tabs = st.tabs(sheet_names)
-        for i, sheet_name in enumerate(sheet_names):
+        tabs = st.tabs(sorted_sheet_names)
+        for i, sheet_name in enumerate(sorted_sheet_names):
             with tabs[i]:
                 if sheet_name == "Audit Summary":
                     try:

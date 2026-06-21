@@ -20,6 +20,7 @@ class RuntimeValidatorAgent:
     def validate_execution(
         self,
         event_name: str,
+        screen: str,
         crawl_plan: CrawlPlan,
         execution_success: bool,
         user_action: str
@@ -27,7 +28,7 @@ class RuntimeValidatorAgent:
         """
         Validates the execution of a single crawl plan and produces a RuntimeValidationResult.
         """
-        logger.info(f"Validating runtime execution for event: {event_name}")
+        logger.info(f"Validating runtime execution for event: {event_name} on screen: {screen}")
         
         # Determine if it's a passive load event (no tap/input steps in plan)
         is_passive = all(step.action_type not in ("tap", "input", "swipe") for step in crawl_plan.steps)
@@ -46,6 +47,7 @@ class RuntimeValidatorAgent:
 
         return RuntimeValidationResult(
             event_name=event_name,
+            screen=screen,
             passed=passed,
             expected_trigger=user_action or "Unknown user action trigger",
             actual_trigger_observed=actual_trigger_observed,
@@ -56,16 +58,18 @@ class RuntimeValidatorAgent:
         """
         Runs the runtime validator logic over a list of execution results.
         Each execution result dict should contain:
-          - "event_name": str
-          - "crawl_plan": CrawlPlan
-          - "execution_success": bool
-          - "user_action": str
+         - "event_name": str
+         - "screen": str
+         - "crawl_plan": CrawlPlan
+         - "execution_success": bool
+         - "user_action": str
         """
         results = []
         for res in execution_results:
             results.append(
                 self.validate_execution(
                     event_name=res["event_name"],
+                    screen=res.get("screen", ""),
                     crawl_plan=res["crawl_plan"],
                     execution_success=res["execution_success"],
                     user_action=res["user_action"]

@@ -29,6 +29,7 @@ class TelemetryValidatorAgent:
             logger.warning(f"No captured logs found for event: {event.event_name}")
             return TelemetryValidationResult(
                 event_name=event.event_name,
+                screen=event.screen,
                 passed=False,
                 missing_keys=[p.param_name for p in event.expected_params],
                 mismatched_keys=[],
@@ -61,6 +62,7 @@ class TelemetryValidatorAgent:
 
             result = TelemetryValidationResult(
                 event_name=event.event_name,
+                screen=event.screen,
                 passed=passed,
                 mismatched_keys=mismatched_keys,
                 missing_keys=missing_keys,

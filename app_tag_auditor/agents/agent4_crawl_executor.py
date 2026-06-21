@@ -165,12 +165,32 @@ class CrawlExecutorAgent:
         for attempt in range(2):
             try:
                 if strategy == "text":
-                    xpath_exact = f'//*[@text="{target_selector}"]'
+                    clean_selector = target_selector.strip('"\'')
                     try:
-                        return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_exact)))
-                    except (TimeoutException, NoSuchElementException):
-                        xpath_contains = f'//*[contains(@text,"{target_selector}")]'
-                        return wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath_contains)))
+                        escaped = clean_selector.replace('"', '\\"')
+                        return wait.until(EC.presence_of_element_located((
+                            AppiumBy.ANDROID_UIAUTOMATOR,
+                            f'new UiSelector().text("{escaped}")'
+                        )))
+                    except Exception:
+                        try:
+                            escaped = clean_selector.replace('"', '\\"')
+                            return wait.until(EC.presence_of_element_located((
+                                AppiumBy.ANDROID_UIAUTOMATOR,
+                                f'new UiSelector().textContains("{escaped}")'
+                            )))
+                        except Exception:
+                            # Fallback to XPath
+                            try:
+                                return wait.until(EC.presence_of_element_located((
+                                    AppiumBy.XPATH,
+                                    f'//*[@text="{target_selector}"]'
+                                )))
+                            except Exception:
+                                return wait.until(EC.presence_of_element_located((
+                                    AppiumBy.XPATH,
+                                    f'//*[contains(@text,"{target_selector}")]'
+                                )))
                 elif strategy == "resource_id":
                     return wait.until(EC.presence_of_element_located((AppiumBy.ID, target_selector)))
                 elif strategy in ("content_desc", "accessibility_id"):
@@ -257,13 +277,24 @@ class CrawlExecutorAgent:
         return True
 
     def quit(self):
-        """Safely tears down the Appium WebDriver driver session."""
+        """Safely tears down the Appium WebDriver driver session with a timeout."""
         if self.driver is not None:
             logger.info("Closing Appium WebDriver session...")
-            try:
-                self.driver.quit()
-            except Exception as e:
-                logger.warning(f"Error closing driver session: {e}")
+            import threading
+            
+            def perform_quit(driver_instance):
+                try:
+                    driver_instance.quit()
+                except Exception as quit_err:
+                    logger.warning(f"Error in driver.quit() thread: {quit_err}")
+
+            quit_thread = threading.Thread(target=perform_quit, args=(self.driver,), daemon=True)
+            quit_thread.start()
+            quit_thread.join(timeout=5.0)
+            if quit_thread.is_alive():
+                logger.warning("Appium WebDriver quit timed out after 5.0 seconds. Continuing.")
+            else:
+                logger.info("Appium WebDriver session closed successfully.")
             self.driver = None
 
 if __name__ == "__main__":

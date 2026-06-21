@@ -34,6 +34,7 @@ class CrawlStep(BaseModel):
 
 class CrawlPlan(BaseModel):
     event_name: str
+    screen: str = ""
     steps: list[CrawlStep] = Field(default_factory=list)
     navigation_resolved: bool = True
 
@@ -46,6 +47,7 @@ class CapturedLog(BaseModel):
 
 class TelemetryValidationResult(BaseModel):
     event_name: str
+    screen: str = ""
     passed: bool
     mismatched_keys: list[str] = Field(default_factory=list)
     missing_keys: list[str] = Field(default_factory=list)
@@ -54,6 +56,7 @@ class TelemetryValidationResult(BaseModel):
 
 class RuntimeValidationResult(BaseModel):
     event_name: str
+    screen: str = ""
     passed: bool
     expected_trigger: str
     actual_trigger_observed: bool

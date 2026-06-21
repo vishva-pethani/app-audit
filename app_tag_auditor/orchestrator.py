@@ -97,7 +97,7 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     executor = CrawlExecutorAgent(apk_path=apk_path)
     try:
         for plan in crawl_plans:
-            matching_event = next((e for e in expected_events if e.event_name == plan.event_name), None)
+            matching_event = next((e for e in expected_events if e.event_name == plan.event_name and e.screen == plan.screen), None)
             if not matching_event:
                 continue
 
@@ -138,7 +138,7 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
             
             all_captured_logs.extend(captured_for_plan)
             all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
-            all_runtime.append(run_val.validate_execution(plan.event_name, plan, exec_ok, matching_event.user_action))
+            all_runtime.append(run_val.validate_execution(plan.event_name, plan.screen, plan, exec_ok, matching_event.user_action))
     finally:
         executor.quit()
 
@@ -161,8 +161,8 @@ def _run_synthetic_dry_run(expected_events: list, writer: LocalExcelWriter) -> N
     
     all_run = []
     for e in expected_events:
-        mock_plan = CrawlPlan(event_name=e.event_name, steps=[CrawlStep(action_type="tap", target_selector="Mock", step_order=0)])
-        all_run.append(run_val.validate_execution(e.event_name, mock_plan, True, e.user_action))
+        mock_plan = CrawlPlan(event_name=e.event_name, screen=e.screen, steps=[CrawlStep(action_type="tap", target_selector="Mock", step_order=0)])
+        all_run.append(run_val.validate_execution(e.event_name, e.screen, mock_plan, True, e.user_action))
     
     ValidationCombinerAgent().run(expected_events, all_tele, all_run, [], writer)
     logger.info("Synthetic validation completed.")

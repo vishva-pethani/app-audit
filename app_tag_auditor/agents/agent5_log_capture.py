@@ -157,7 +157,8 @@ class LogCaptureAgent:
         def reader():
             try:
                 for line in iter(self.process.stdout.readline, ''):
-                    logger.info(f"[LOG_CAPTURE_RAW] {line.strip()}")
+                    safe_line = line.strip().encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                    logger.info(f"[LOG_CAPTURE_RAW] {safe_line}")
                     self._queue.put(line)
             except Exception:
                 logger.warning("Error in reader thread:", exc_info=True)
