@@ -391,13 +391,13 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
             for col in df.columns:
                 th_style = 'padding: 12px 16px; text-align: left; font-weight: 600; color: #ff8f00; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;'
                 if col == "Logs":
-                    th_style += ' min-width: 500px;'
+                    th_style += ' min-width: 450px;'
                 elif col == "Event Parameters Example Values":
                     th_style += ' min-width: 220px;'
                 elif col == "Comments":
                     th_style += ' min-width: 300px;'
                 elif col == "Principle":
-                    th_style += ' min-width: 350px;'
+                    th_style += ' min-width: 250px;'
                 html += f'<th style="{th_style}">{col}</th>'
             html += '</tr></thead>'
             
@@ -423,13 +423,13 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                     
                     td_style = 'padding: 12px 16px; vertical-align: top;'
                     if col == "Logs":
-                        td_style += ' min-width: 500px;'
+                        td_style += ' min-width: 450px;'
                     elif col == "Event Parameters Example Values":
                         td_style += ' min-width: 220px;'
                     elif col == "Comments":
                         td_style += ' min-width: 300px;'
                     elif col == "Principle":
-                        td_style += ' min-width: 350px;'
+                        td_style += ' min-width: 250px;'
                     html += f'<td style="{td_style}">{cell_content}</td>'
                 html += '</tr>'
             html += '</tbody></table></div>'
