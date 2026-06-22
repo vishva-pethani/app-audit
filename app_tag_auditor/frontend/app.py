@@ -352,14 +352,55 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
         preferred_order = ["Audit Summary", "Audit Analysis"]
         sorted_sheet_names = [s for s in preferred_order if s in sheet_names] + [s for s in sheet_names if s not in preferred_order]
         
-        def style_status(val):
-            if val == "Implemented":
-                return "background-color: #E2EFDA; color: #375623; font-weight: bold;"
-            elif val == "Implemented with issues":
-                return "background-color: #FFF2CC; color: #7F6000; font-weight: bold;"
-            elif val == "Not Implemented":
-                return "background-color: #FADBD8; color: #78281F; font-weight: bold;"
-            return ""
+        def render_html_table(df, is_summary=False):
+            # Clean up nan values for proper display
+            df = df.fillna("")
+            
+            def get_status_badge(val):
+                val_clean = str(val).strip()
+                if val_clean == "Implemented":
+                    return '<span style="background-color: #E2EFDA; color: #375623; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; display: inline-block;">Implemented</span>'
+                elif val_clean == "Implemented with issues":
+                    return '<span style="background-color: #FFF2CC; color: #7F6000; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; display: inline-block;">Implemented with issues</span>'
+                elif val_clean == "Scenario Not Found":
+                    return '<span style="background-color: #EAECEE; color: #5D6D7E; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; display: inline-block;">Scenario Not Found</span>'
+                elif val_clean == "Not Implemented":
+                    return '<span style="background-color: #FADBD8; color: #78281F; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; display: inline-block;">Not Implemented</span>'
+                return val_clean
+
+            # Build HTML table
+            html = '<div style="overflow-x: auto; margin: 1rem 0; width: 100%; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">'
+            html += '<table style="width: 100%; border-collapse: collapse; background-color: #161a24; font-size: 0.9rem;">'
+            
+            # Table Headers
+            html += '<thead><tr style="background-color: #1f2430; border-bottom: 2px solid rgba(255,255,255,0.1);">'
+            for col in df.columns:
+                html += f'<th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #ff8f00; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">{col}</th>'
+            html += '</tr></thead>'
+            
+            # Table Body
+            html += '<tbody>'
+            for _, row in df.iterrows():
+                html += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">'
+                for col in df.columns:
+                    val = row[col]
+                    val_str = str(val).strip()
+                    
+                    if (is_summary and col == "Static Status Category") or (not is_summary and col == "Status"):
+                        cell_content = get_status_badge(val_str)
+                    else:
+                        if col in ["Comments", "Logs"] and val_str:
+                            formatted_val = val_str.replace("\n", "<br/>")
+                            cell_content = f'<div style="white-space: pre-wrap; font-family: monospace; font-size: 0.8rem; line-height: 1.4; color: #d1d5db; max-width: 600px; word-break: break-all;">{formatted_val}</div>'
+                        elif val_str:
+                            cell_content = f'<div style="white-space: pre-wrap; color: #e5e7eb; word-break: break-word;">{val_str}</div>'
+                        else:
+                            cell_content = '<span style="color: #6b7280; font-style: italic;">None</span>'
+                    
+                    html += f'<td style="padding: 12px 16px; vertical-align: top;">{cell_content}</td>'
+                html += '</tr>'
+            html += '</tbody></table></div>'
+            st.markdown(html, unsafe_allow_html=True)
 
         tabs = st.tabs(sorted_sheet_names)
         for i, sheet_name in enumerate(sorted_sheet_names):
@@ -369,23 +410,12 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                         df = pd.read_excel(output_path, sheet_name=sheet_name, header=3)
                         df = df.dropna(how="all")
                         st.markdown("#### 📊 App Tag Auditor - Audit Summary")
-                        if hasattr(df.style, "map"):
-                            styled_df = df.style.map(style_status, subset=["Static Status Category"])
-                        else:
-                            styled_df = df.style.applymap(style_status, subset=["Static Status Category"])
-                        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                        render_html_table(df, is_summary=True)
                     except Exception as e:
                         df = pd.read_excel(output_path, sheet_name=sheet_name)
-                        st.dataframe(df, use_container_width=True, hide_index=True)
+                        render_html_table(df, is_summary=True)
                 else:
                     df = pd.read_excel(output_path, sheet_name=sheet_name)
-                    if "Status" in df.columns:
-                        if hasattr(df.style, "map"):
-                            styled_df = df.style.map(style_status, subset=["Status"])
-                        else:
-                            styled_df = df.style.applymap(style_status, subset=["Status"])
-                        st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                    else:
-                        st.dataframe(df, use_container_width=True, hide_index=True)
+                    render_html_table(df, is_summary=False)
     except Exception as e:
         st.warning(f"Could not load preview table for the Excel sheet: {e}")
