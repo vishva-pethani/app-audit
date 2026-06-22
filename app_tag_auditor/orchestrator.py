@@ -88,53 +88,49 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     tele_val, run_val = TelemetryValidatorAgent(), RuntimeValidatorAgent()
     expected_names = {e.event_name for e in expected_events}
 
-    executor = CrawlExecutorAgent(apk_path=apk_path)
-    try:
-        for plan in crawl_plans:
-            matching_event = next((e for e in expected_events if e.event_name == plan.event_name and e.screen == plan.screen), None)
-            if not matching_event:
-                continue
+    for plan in crawl_plans:
+        matching_event = next((e for e in expected_events if e.event_name == plan.event_name and e.screen == plan.screen), None)
+        if not matching_event:
+            continue
 
+        try:
             log_agent.start_capture()
-            
-            # Restart the app fresh on the device before executing the next scenario
-            # (only if driver has already been built on a previous iteration)
-            if executor.driver is not None:
-                logger.info(f"Relaunching app {settings.ANDROID_APP_PACKAGE} to start scenario '{plan.event_name}' fresh...")
+        except Exception as e:
+            logger.error(f"Failed to start log capture: {e}")
+
+        executor, exec_ok = None, False
+        try:
+            executor = CrawlExecutorAgent(apk_path=apk_path)
+            exec_ok = executor.execute_plan(plan)
+        except Exception as e:
+            logger.error(f"Execution error for plan {plan.event_name}: {e}")
+        finally:
+            if executor is not None:
                 try:
-                    executor.driver.terminate_app(settings.ANDROID_APP_PACKAGE)
-                    time.sleep(1)
-                    executor.driver.activate_app(settings.ANDROID_APP_PACKAGE)
-                    time.sleep(4)
-                    executor._ensure_on_main_screen()
+                    executor.quit()
                 except Exception as e:
-                    logger.warning(f"Error restarting app between plans: {e}")
-
-            exec_ok = False
-            try:
-                exec_ok = executor.execute_plan(plan)
-            except Exception as e:
-                logger.error(f"Execution error for plan {plan.event_name}: {e}")
-            
-            # Allow final analytics logs to flush to the adb buffer
-            time.sleep(3)
+                    logger.warning(f"Error while quitting executor: {e}")
+        
+        # Allow final analytics logs to flush to the adb buffer
+        time.sleep(2)
+        try:
             log_agent.stop_capture()
+        except Exception as e:
+            logger.error(f"Failed to stop log capture: {e}")
 
-            captured_lines = []
-            while not log_agent._queue.empty():
-                try:
-                    captured_lines.append(log_agent._queue.get_nowait())
-                except queue.Empty:
-                    break
+        captured_lines = []
+        while not log_agent._queue.empty():
+            try:
+                captured_lines.append(log_agent._queue.get_nowait())
+            except queue.Empty:
+                break
 
-            parsed_logs = log_agent.parse_lines(captured_lines)
-            captured_for_plan = [log for log in parsed_logs if log.event_name in expected_names]
-            
-            all_captured_logs.extend(captured_for_plan)
-            all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
-            all_runtime.append(run_val.validate_execution(plan.event_name, plan.screen, plan, exec_ok, matching_event.user_action))
-    finally:
-        executor.quit()
+        parsed_logs = log_agent.parse_lines(captured_lines)
+        captured_for_plan = [log for log in parsed_logs if log.event_name in expected_names]
+        
+        all_captured_logs.extend(captured_for_plan)
+        all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
+        all_runtime.append(run_val.validate_execution(plan.event_name, plan.screen, plan, exec_ok, matching_event.user_action))
 
     ValidationCombinerAgent().run(expected_events, all_telemetry, all_runtime, code_locations, writer)
     logger.info(f"Audit pipeline completed. Results written to: {settings.LOCAL_OUTPUT_PATH}")
