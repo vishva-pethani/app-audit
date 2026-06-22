@@ -533,45 +533,55 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                     df = pd.read_excel(output_path, sheet_name=sheet_name)
                     df = df.fillna("")
                     
-                    edit_mode = st.toggle("✏️ Enable Edit Mode", key=f"edit_mode_{sheet_name}", value=False)
-                    
-                    if edit_mode:
-                        # Columns configuration
-                        column_config = {
-                            "Status": st.column_config.SelectboxColumn(
-                                "Status",
-                                options=[
-                                    "Implemented",
-                                    "Implemented with issues",
-                                    "Scenario Not Found",
-                                    "Not Implemented"
-                                ],
-                                required=True,
-                            ),
-                            "Comments": st.column_config.TextColumn(
-                                "Comments",
-                            ),
-                            "Logs": st.column_config.TextColumn(
-                                "Logs",
-                            )
-                        }
-                        
-                        disabled_cols = [c for c in df.columns if c not in ["Status", "Comments", "Logs"]]
-                        
-                        st.markdown("##### 📝 Editable Results Table")
-                        st.info("💡 Double-click any cell in **Status**, **Comments**, or **Logs** to edit it. Edits are saved directly to the spreadsheet report.")
-                        
-                        st.data_editor(
-                            df,
-                            key="editor_analysis",
-                            on_change=on_editor_change,
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config=column_config,
-                            disabled=disabled_cols
+                    # Columns configuration with explicit widths matching the non-editable mode
+                    column_config = {
+                        "Status": st.column_config.SelectboxColumn(
+                            "Status",
+                            options=[
+                                "Implemented",
+                                "Implemented with issues",
+                                "Scenario Not Found",
+                                "Not Implemented"
+                            ],
+                            required=True,
+                            width=150
+                        ),
+                        "Comments": st.column_config.TextColumn(
+                            "Comments",
+                            width=300
+                        ),
+                        "Logs": st.column_config.TextColumn(
+                            "Logs",
+                            width=450
+                        ),
+                        "Principle": st.column_config.TextColumn(
+                            "Principle",
+                            width=250
+                        ),
+                        "Event Parameters Example Values": st.column_config.TextColumn(
+                            "Event Parameters Example Values",
+                            width=220
                         )
-                    else:
-                        st.markdown("##### 🔍 Audit Preview Table")
-                        render_html_table(df, is_summary=False)
+                    }
+                    
+                    disabled_cols = [c for c in df.columns if c not in ["Status", "Comments", "Logs"]]
+                    
+                    st.markdown("##### 📝 Editable Results Table")
+                    st.info("💡 Double-click any cell in **Status**, **Comments**, or **Logs** to edit it. Edits are saved directly to the spreadsheet report.")
+                    
+                    # Calculate dynamic height to display all rows without internal scrollbar
+                    row_height = 36
+                    calculated_height = (len(df) + 1) * row_height + 40
+                    
+                    st.data_editor(
+                        df,
+                        key="editor_analysis",
+                        on_change=on_editor_change,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=calculated_height,
+                        column_config=column_config,
+                        disabled=disabled_cols
+                    )
     except Exception as e:
         st.warning(f"Could not load preview table for the Excel sheet: {e}")
