@@ -375,7 +375,14 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
             # Table Headers
             html += '<thead><tr style="background-color: #1f2430; border-bottom: 2px solid rgba(255,255,255,0.1);">'
             for col in df.columns:
-                html += f'<th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #ff8f00; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">{col}</th>'
+                th_style = 'padding: 12px 16px; text-align: left; font-weight: 600; color: #ff8f00; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;'
+                if col == "Logs":
+                    th_style += ' min-width: 500px;'
+                elif col == "Event Parameters Example Values":
+                    th_style += ' min-width: 350px;'
+                elif col == "Comments":
+                    th_style += ' min-width: 300px;'
+                html += f'<th style="{th_style}">{col}</th>'
             html += '</tr></thead>'
             
             # Table Body
@@ -391,13 +398,21 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                     else:
                         if col in ["Comments", "Logs"] and val_str:
                             formatted_val = val_str.replace("\n", "<br/>")
-                            cell_content = f'<div style="white-space: pre-wrap; font-family: monospace; font-size: 0.8rem; line-height: 1.4; color: #d1d5db; max-width: 600px; word-break: break-all;">{formatted_val}</div>'
+                            max_w = "800px" if col == "Logs" else "600px"
+                            cell_content = f'<div style="white-space: pre-wrap; font-family: monospace; font-size: 0.8rem; line-height: 1.4; color: #d1d5db; max-width: {max_w}; word-break: break-all;">{formatted_val}</div>'
                         elif val_str:
                             cell_content = f'<div style="white-space: pre-wrap; color: #e5e7eb; word-break: break-word;">{val_str}</div>'
                         else:
                             cell_content = '<span style="color: #6b7280; font-style: italic;">None</span>'
                     
-                    html += f'<td style="padding: 12px 16px; vertical-align: top;">{cell_content}</td>'
+                    td_style = 'padding: 12px 16px; vertical-align: top;'
+                    if col == "Logs":
+                        td_style += ' min-width: 500px;'
+                    elif col == "Event Parameters Example Values":
+                        td_style += ' min-width: 350px;'
+                    elif col == "Comments":
+                        td_style += ' min-width: 300px;'
+                    html += f'<td style="{td_style}">{cell_content}</td>'
                 html += '</tr>'
             html += '</tbody></table></div>'
             st.markdown(html, unsafe_allow_html=True)
