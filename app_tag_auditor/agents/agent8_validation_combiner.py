@@ -77,11 +77,11 @@ def _evaluate_event(
                 comments_list.append(f"• '{k}' value mismatch: expected '{expected_val}' but got '{actual_val}'.")
                 
             if telemetry.extra_keys:
-                keys_str = ", ".join(telemetry.extra_keys)
+                keys_str = ", ".join(f"'{k}'" for k in telemetry.extra_keys)
                 if len(telemetry.extra_keys) == 1:
-                    comments_list.append(f"• {keys_str} is an extra parameter found. It is advised to remove it.")
+                    comments_list.append(f"• {keys_str} is an extra parameter found in the logs. It is advised to remove it.")
                 else:
-                    comments_list.append(f"• {keys_str} are extra parameters found. It is advised to remove them.")
+                    comments_list.append(f"• {keys_str} are extra parameters found in the logs. It is advised to remove them.")
             
             # Check if screen or identifying parameters are mismatched/missing
             screen_keys = [k for k in (telemetry.missing_keys + telemetry.mismatched_keys) if "screen" in k.lower()]

@@ -57,8 +57,8 @@ class TelemetryValidatorAgent:
                     if expected_val and actual_val != expected_val:
                         mismatched_keys.append(name)
 
-            passed = (len(missing_keys) == 0 and len(mismatched_keys) == 0)
-            error_score = len(missing_keys) + len(mismatched_keys)
+            passed = (len(missing_keys) == 0 and len(mismatched_keys) == 0 and len(extra_keys) == 0)
+            error_score = len(missing_keys) + len(mismatched_keys) + len(extra_keys)
 
             result = TelemetryValidationResult(
                 event_name=event.event_name,
