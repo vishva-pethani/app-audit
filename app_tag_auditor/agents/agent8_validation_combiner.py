@@ -93,7 +93,7 @@ def _evaluate_event(
         # No matching log was captured at all
         if has_code_mapping:
             status = "Scenario Not Found"
-            comments_list.append("• Event found in codebase but absent in runtime logs.")
+            evidence = ""
         else:
             status = "Not Implemented"
             comments_list.append("• Event not found in codebase and absent in runtime logs.")
@@ -233,7 +233,7 @@ class ValidationCombinerAgent:
                 "Event Parameters Example Values": ", ".join(f"{p.param_name}={p.example_value}" for p in event.expected_params),
                 "Status": status,
                 "Comments": comments,
-                "Runtime Evidence": evidence
+                "Logs": evidence
             })
 
             # For backwards compatibility/legacy return
@@ -369,7 +369,7 @@ class ValidationCombinerAgent:
         headers = [
             "User Action", "Screen Name", "Event Name", "Event Parameters", 
             "Parameter Type", "Data Type", "Principle", 
-            "Event Parameters Example Values", "Status", "Comments", "Runtime Evidence"
+            "Event Parameters Example Values", "Status", "Comments", "Logs"
         ]
         ws_analysis.append(headers)
         
@@ -393,7 +393,7 @@ class ValidationCombinerAgent:
                 cell.border = thin_border
                 
                 # Default alignment
-                if headers[col_idx-1] in ["Comments", "Runtime Evidence"]:
+                if headers[col_idx-1] in ["Comments", "Logs"]:
                     cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
                 elif headers[col_idx-1] == "Status":
                     cell.alignment = center_align
@@ -428,7 +428,7 @@ class ValidationCombinerAgent:
             "H": 35, # Example Values
             "I": 25, # Status
             "J": 45, # Comments
-            "K": 60, # Runtime Evidence
+            "K": 60, # Logs
         }
         for col_letter, width in widths.items():
             ws_analysis.column_dimensions[col_letter].width = width
