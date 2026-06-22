@@ -334,11 +334,25 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
     st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
     st.markdown('<h3 style="color: #ff8f00;">📊 Audit Results Report</h3>', unsafe_allow_html=True)
     
+    # Determine the output download filename dynamically based on the input schema name
+    schema_source = st.session_state.get("schema_source")
+    given_sheet_name = "results"
+    if schema_source == "Google Drive Sheets Picker":
+        sheet_drive = st.session_state.get("sheet_drive")
+        if sheet_drive and sheet_drive.get("file_name"):
+            given_sheet_name = sheet_drive["file_name"]
+    else:
+        schema_path = st.session_state.get("schema_path")
+        if schema_path:
+            given_sheet_name = os.path.splitext(os.path.basename(schema_path))[0]
+            
+    export_filename = f"audit_result_{given_sheet_name}.xlsx"
+
     with open(output_path, "rb") as f:
         st.download_button(
             label="📥 Download Generated Excel Report",
             data=f,
-            file_name="audit_results.xlsx",
+            file_name=export_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
