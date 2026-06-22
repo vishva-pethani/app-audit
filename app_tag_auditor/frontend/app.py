@@ -435,6 +435,88 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
             html += '</tbody></table></div>'
             st.markdown(html, unsafe_allow_html=True)
 
+        def on_editor_change():
+            edits = st.session_state.get("editor_analysis", {}).get("edited_rows", {})
+            if edits:
+                try:
+                    import openpyxl
+                    from openpyxl.styles import PatternFill, Font
+                    
+                    wb = openpyxl.load_workbook(output_path)
+                    if "Audit Analysis" not in wb.sheetnames:
+                        return
+                    ws_analysis = wb["Audit Analysis"]
+                    
+                    # Get headers to find indices
+                    headers = [cell.value for cell in ws_analysis[1]]
+                    status_col_idx = headers.index("Status") + 1
+                    comments_col_idx = headers.index("Comments") + 1
+                    logs_col_idx = headers.index("Logs") + 1
+                    
+                    font_family = "Segoe UI"
+                    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+                    green_font = Font(name=font_family, size=10, bold=True, color="375623")
+                    yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+                    yellow_font = Font(name=font_family, size=10, bold=True, color="7F6000")
+                    red_fill = PatternFill(start_color="FADBD8", end_color="FADBD8", fill_type="solid")
+                    red_font = Font(name=font_family, size=10, bold=True, color="78281F")
+                    gray_fill = PatternFill(start_color="EAECEE", end_color="EAECEE", fill_type="solid")
+                    gray_font = Font(name=font_family, size=10, bold=True, color="5D6D7E")
+                    
+                    for row_idx_str, changes in edits.items():
+                        row_idx = int(row_idx_str)
+                        excel_row = row_idx + 2
+                        
+                        if "Status" in changes:
+                            val = changes["Status"]
+                            cell = ws_analysis.cell(row=excel_row, column=status_col_idx, value=val)
+                            if val == "Implemented":
+                                cell.fill = green_fill
+                                cell.font = green_font
+                            elif val == "Implemented with issues":
+                                cell.fill = yellow_fill
+                                cell.font = yellow_font
+                            elif val == "Scenario Not Found":
+                                cell.fill = gray_fill
+                                cell.font = gray_font
+                            else:
+                                cell.fill = red_fill
+                                cell.font = red_font
+                                
+                        if "Comments" in changes:
+                            ws_analysis.cell(row=excel_row, column=comments_col_idx, value=changes["Comments"])
+                            
+                        if "Logs" in changes:
+                            ws_analysis.cell(row=excel_row, column=logs_col_idx, value=changes["Logs"])
+                            
+                    # Update summary tab counts
+                    if any("Status" in changes for changes in edits.values()) and "Audit Summary" in wb.sheetnames:
+                        ws_summary = wb["Audit Summary"]
+                        implemented_count = 0
+                        implemented_with_issues_count = 0
+                        not_implemented_count = 0
+                        scenario_not_found_count = 0
+                        
+                        for r in range(2, ws_analysis.max_row + 1):
+                            val = ws_analysis.cell(row=r, column=status_col_idx).value
+                            if val == "Implemented":
+                                implemented_count += 1
+                            elif val == "Implemented with issues":
+                                implemented_with_issues_count += 1
+                            elif val == "Scenario Not Found":
+                                scenario_not_found_count += 1
+                            else:
+                                not_implemented_count += 1
+                                
+                        ws_summary["B5"] = implemented_count
+                        ws_summary["B6"] = implemented_with_issues_count
+                        ws_summary["B7"] = not_implemented_count
+                        ws_summary["B8"] = scenario_not_found_count
+                        
+                    wb.save(output_path)
+                except Exception as e:
+                    st.error(f"Error saving edits to Excel: {e}")
+
         tabs = st.tabs(sorted_sheet_names)
         for i, sheet_name in enumerate(sorted_sheet_names):
             with tabs[i]:
@@ -449,6 +531,41 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                         render_html_table(df, is_summary=True)
                 else:
                     df = pd.read_excel(output_path, sheet_name=sheet_name)
-                    render_html_table(df, is_summary=False)
+                    df = df.fillna("")
+                    
+                    # Columns configuration
+                    column_config = {
+                        "Status": st.column_config.SelectboxColumn(
+                            "Status",
+                            options=[
+                                "Implemented",
+                                "Implemented with issues",
+                                "Scenario Not Found",
+                                "Not Implemented"
+                            ],
+                            required=True,
+                        ),
+                        "Comments": st.column_config.TextColumn(
+                            "Comments",
+                        ),
+                        "Logs": st.column_config.TextColumn(
+                            "Logs",
+                        )
+                    }
+                    
+                    disabled_cols = [c for c in df.columns if c not in ["Status", "Comments", "Logs"]]
+                    
+                    st.markdown("##### 📝 Editable Results Table")
+                    st.info("💡 Double-click any cell in **Status**, **Comments**, or **Logs** to edit it. Edits are saved directly to the spreadsheet report.")
+                    
+                    st.data_editor(
+                        df,
+                        key="editor_analysis",
+                        on_change=on_editor_change,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=column_config,
+                        disabled=disabled_cols
+                    )
     except Exception as e:
         st.warning(f"Could not load preview table for the Excel sheet: {e}")
