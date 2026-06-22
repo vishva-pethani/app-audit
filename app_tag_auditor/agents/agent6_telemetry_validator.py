@@ -39,7 +39,10 @@ class TelemetryValidatorAgent:
         "countryCode",
         "ga_screen_class",
         "ga_screen",
-        "ga_screen_id"
+        "ga_screen_id",
+        "ga_previous_class",
+        "ga_previous_id",
+        "ga_previous_screen"
     }
 
     def __init__(self, config: dict | None = None):
