@@ -18,6 +18,13 @@ class CrawlPlannerAgent:
         self.home_screen = home_screen
         self.navigation_map = self._load_navigation_map()
 
+    def _normalize_name(self, name: str) -> str:
+        """Normalizes a screen or event name to allow flexible matching."""
+        s = re.sub(r'[\s_-]+', '', name.lower())
+        if s.endswith("screen"):
+            s = s[:-6]
+        return s
+
     def _load_navigation_map(self) -> dict:
         """Loads sitemap mapping from json file. Logs warning if missing."""
         path = self.navigation_map_path
@@ -34,18 +41,34 @@ class CrawlPlannerAgent:
 
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                raw_map = json.load(f)
+                return {self._normalize_name(k): v for k, v in raw_map.items()}
         except Exception as e:
             logger.warning(f"Failed to parse navigation map from {path}: {e}. Empty map assumed.")
             return {}
 
     def _build_navigation_steps(self, target_screen: str, current_screen: str) -> tuple[list[CrawlStep], bool]:
         """Looks up the target screen in sitemap and converts entries to CrawlSteps."""
-        if current_screen == target_screen:
+        norm_target = self._normalize_name(target_screen)
+        norm_current = self._normalize_name(current_screen)
+
+        if norm_current == norm_target:
             return ([], True)
 
-        if target_screen in self.navigation_map:
-            raw_steps = self.navigation_map[target_screen]
+        # Substring/prefix/suffix fallback matching
+        matched_key = None
+        if norm_target in self.navigation_map:
+            matched_key = norm_target
+        else:
+            sorted_keys = sorted(self.navigation_map.keys(), key=len, reverse=True)
+            for key in sorted_keys:
+                if key in norm_target:
+                    logger.info(f"Target screen '{target_screen}' not found exactly. Falling back to navigation steps of parent key '{key}'")
+                    matched_key = key
+                    break
+
+        if matched_key:
+            raw_steps = self.navigation_map[matched_key]
             steps = []
             for order, step_dict in enumerate(raw_steps):
                 steps.append(CrawlStep(
@@ -70,14 +93,29 @@ class CrawlPlannerAgent:
 
     def _extract_tap_target(self, event: ExpectedEvent) -> tuple[str, str]:
         """Extracts the tap target selector and search strategy from event metadata."""
-        # Hardcoded overrides for Royal Enfield application events to ensure stable resource-id lookups.
         event_lower = event.event_name.lower()
+        ua_lower = event.user_action.lower()
+
+        is_profile_trigger = (
+            "profile" in event_lower or
+            any(x in ua_lower for x in ["click on profile", "click profile", "tap on profile", "tap profile", "profile icon", "profile button", "click on avatar", "avatar icon"])
+        )
+        is_hamburger_trigger = (
+            "hamburger" in event_lower or "moremenu" in event_lower or "more_menu" in event_lower or
+            any(x in ua_lower for x in ["click on hamburger", "click hamburger", "tap on hamburger", "tap hamburger", "hamburger icon", "more menu", "side menu", "hamburger button"])
+        )
+
+        # Hardcoded overrides for Royal Enfield application events to ensure stable resource-id lookups.
         if "add_motorcycle" in event_lower:
             return ("com.royalenfield.reprime:id/add_btn", "resource_id")
         elif "book_service" in event_lower:
             return ("com.royalenfield.reprime:id/book_now_layout", "resource_id")
         elif "view_service_history" in event_lower:
             return ("com.royalenfield.reprime:id/service_history_card_view", "resource_id")
+        elif is_profile_trigger:
+            return ("com.royalenfield.reprime:id/img_profile", "resource_id")
+        elif is_hamburger_trigger:
+            return ("com.royalenfield.reprime:id/img_moreMenu", "resource_id")
 
         # 1. Check if click/CTA parameter text is defined
         target_param_names = {"clicktext", "buttontext", "label", "ctatext"}

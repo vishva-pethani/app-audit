@@ -1,5 +1,25 @@
 {
   "My_RE_screen": [
     {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "accessibility_id"}
+  ],
+  "home": [
+    {"action_type": "tap", "target_selector": "Home", "value": null, "selector_strategy": "accessibility_id"}
+  ],
+  "rides": [
+    {"action_type": "tap", "target_selector": "Rides", "value": null, "selector_strategy": "accessibility_id"}
+  ],
+  "navigate": [
+    {"action_type": "tap", "target_selector": "Navigate", "value": null, "selector_strategy": "accessibility_id"}
+  ],
+  "shop": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "accessibility_id"}
+  ],
+  "profile": [
+    {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "accessibility_id"},
+    {"action_type": "tap", "target_selector": "com.royalenfield.reprime:id/img_profile", "value": null, "selector_strategy": "resource_id"}
+  ],
+  "more_menu": [
+    {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "accessibility_id"},
+    {"action_type": "tap", "target_selector": "com.royalenfield.reprime:id/img_moreMenu", "value": null, "selector_strategy": "resource_id"}
   ]
 }
