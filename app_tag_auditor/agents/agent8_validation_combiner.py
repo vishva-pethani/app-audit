@@ -92,10 +92,8 @@ def _evaluate_event(
     else:
         # No matching log was captured at all
         if has_code_mapping:
-            status = "Implemented with issues"
+            status = "Scenario Not Found"
             comments_list.append("• Event found in codebase but absent in runtime logs.")
-            for p in event.expected_params:
-                comments_list.append(f"• The parameter '{p.param_name}' is missing.")
         else:
             status = "Not Implemented"
             comments_list.append("• Event not found in codebase and absent in runtime logs.")
@@ -204,6 +202,7 @@ class ValidationCombinerAgent:
         implemented_count = 0
         implemented_with_issues_count = 0
         not_implemented_count = 0
+        scenario_not_found_count = 0
         
         analysis_rows_data = []
 
@@ -218,6 +217,8 @@ class ValidationCombinerAgent:
                 implemented_count += 1
             elif status == "Implemented with issues":
                 implemented_with_issues_count += 1
+            elif status == "Scenario Not Found":
+                scenario_not_found_count += 1
             else:
                 not_implemented_count += 1
                 
@@ -274,7 +275,8 @@ class ValidationCombinerAgent:
         ws_summary.append(["Implemented", implemented_count]) # Row 5
         ws_summary.append(["Implemented with issues", implemented_with_issues_count]) # Row 6
         ws_summary.append(["Not Implemented", not_implemented_count]) # Row 7
-        ws_summary.append(["Total Static Events", len(expected_events)]) # Row 8
+        ws_summary.append(["Scenario Not Found", scenario_not_found_count]) # Row 8
+        ws_summary.append(["Total Static Events", len(expected_events)]) # Row 9
         
         # Merge A2:B2
         ws_summary.merge_cells("A2:B2")
@@ -294,6 +296,9 @@ class ValidationCombinerAgent:
         
         red_fill = PatternFill(start_color="FADBD8", end_color="FADBD8", fill_type="solid")
         red_font = Font(name=font_family, size=10, bold=True, color="78281F")
+        
+        gray_fill = PatternFill(start_color="EAECEE", end_color="EAECEE", fill_type="solid")
+        gray_font = Font(name=font_family, size=10, bold=True, color="5D6D7E")
         
         bold_font = Font(name=font_family, size=11, bold=True, color="000000")
         regular_font = Font(name=font_family, size=10, color="000000")
@@ -339,14 +344,22 @@ class ValidationCombinerAgent:
         ws_summary["B7"].font = bold_font
         ws_summary["B7"].alignment = center_align
         ws_summary["B7"].border = thin_border
-        
-        # Total Row 8
-        double_bottom = Border(top=Side(border_style="thin", color="000000"), bottom=Side(border_style="double", color="000000"))
-        ws_summary["A8"].font = bold_font
-        ws_summary["A8"].border = double_bottom
+
+        # Scenario Not Found (Row 8)
+        ws_summary["A8"].fill = gray_fill
+        ws_summary["A8"].font = gray_font
+        ws_summary["A8"].border = thin_border
         ws_summary["B8"].font = bold_font
         ws_summary["B8"].alignment = center_align
-        ws_summary["B8"].border = double_bottom
+        ws_summary["B8"].border = thin_border
+        
+        # Total Row 9
+        double_bottom = Border(top=Side(border_style="thin", color="000000"), bottom=Side(border_style="double", color="000000"))
+        ws_summary["A9"].font = bold_font
+        ws_summary["A9"].border = double_bottom
+        ws_summary["B9"].font = bold_font
+        ws_summary["B9"].alignment = center_align
+        ws_summary["B9"].border = double_bottom
         
         ws_summary.column_dimensions["A"].width = 30
         ws_summary.column_dimensions["B"].width = 15
@@ -396,6 +409,9 @@ class ValidationCombinerAgent:
             elif status_val == "Implemented with issues":
                 status_cell.fill = yellow_fill
                 status_cell.font = yellow_font
+            elif status_val == "Scenario Not Found":
+                status_cell.fill = gray_fill
+                status_cell.font = gray_font
             else:
                 status_cell.fill = red_fill
                 status_cell.font = red_font
