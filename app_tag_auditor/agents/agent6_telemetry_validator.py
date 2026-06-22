@@ -36,7 +36,10 @@ class TelemetryValidatorAgent:
         "regionCode",
         "appIdentificationValue",
         "tvc_environment",
-        "countryCode"
+        "countryCode",
+        "ga_screen_class",
+        "ga_screen",
+        "ga_screen_id"
     }
 
     def __init__(self, config: dict | None = None):
