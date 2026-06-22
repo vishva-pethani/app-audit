@@ -3,6 +3,9 @@ import os
 import streamlit as st
 import pandas as pd
 import logging
+import queue
+import threading
+import time
 from google.oauth2.credentials import Credentials
 
 # Ensure the app_tag_auditor directory is in sys.path so core and frontend imports resolve correctly
@@ -116,19 +119,41 @@ html, body, [class*="css"] {
 st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">Automated Firebase Analytics APK Auditing System</div>', unsafe_allow_html=True)
 
+# Initialize session state variables
+settings = get_settings()
+output_path = settings.LOCAL_OUTPUT_PATH
+
+if "pipeline_completed" not in st.session_state:
+    st.session_state["pipeline_completed"] = os.path.exists(output_path)
+if "pipeline_running" not in st.session_state:
+    st.session_state["pipeline_running"] = False
+if "pipeline_error" not in st.session_state:
+    st.session_state["pipeline_error"] = None
+
 class StreamlitLogHandler(logging.Handler):
-    def __init__(self, placeholder):
+    def __init__(self, log_queue):
         super().__init__()
-        self.placeholder = placeholder
-        self.log_buffer = []
+        self.log_queue = log_queue
 
     def emit(self, record):
-        msg = self.format(record)
-        self.log_buffer.append(msg)
         try:
-            self.placeholder.code("\n".join(self.log_buffer))
+            msg = self.format(record)
+            self.log_queue.put(msg)
         except Exception:
             pass
+
+class PipelineThread(threading.Thread):
+    def __init__(self, apk_path, schema_path):
+        super().__init__()
+        self.apk_path = apk_path
+        self.schema_path = schema_path
+        self.exception = None
+
+    def run(self):
+        try:
+            run_pipeline(apk_path=self.apk_path, schema_path=self.schema_path)
+        except Exception as e:
+            self.exception = e
 
 # Two-column layout for file selections
 col1, col2 = st.columns(2)
@@ -241,32 +266,71 @@ if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
         info_placeholder = st.empty()
         info_placeholder.info("Pipeline execution starting. Real-time console logs will display below:")
         
-        # Setup logging redirection to Streamlit UI
+        # Setup logging redirection to Streamlit UI via queue
+        log_queue = queue.Queue()
         root_logger = logging.getLogger()
         log_placeholder = st.empty()
-        handler = StreamlitLogHandler(log_placeholder)
+        handler = StreamlitLogHandler(log_queue)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         old_level = root_logger.level
         root_logger.setLevel(logging.INFO)
         root_logger.addHandler(handler)
         
+        st.session_state["pipeline_completed"] = False
+        st.session_state["pipeline_error"] = None
+        
+        # Start pipeline execution in background thread
+        thread = PipelineThread(apk_path=apk_path, schema_path=schema_path)
+        thread.start()
+        
+        log_buffer = []
         try:
-            run_pipeline(apk_path=apk_path, schema_path=schema_path)
+            while thread.is_alive():
+                updated = False
+                while not log_queue.empty():
+                    try:
+                        msg = log_queue.get_nowait()
+                        log_buffer.append(msg)
+                        updated = True
+                    except queue.Empty:
+                        break
+                if updated:
+                    log_placeholder.code("\n".join(log_buffer))
+                time.sleep(0.2)
+                
+            # Process remaining logs
+            while not log_queue.empty():
+                try:
+                    msg = log_queue.get_nowait()
+                    log_buffer.append(msg)
+                except queue.Empty:
+                    break
+            log_placeholder.code("\n".join(log_buffer))
+            
+            # Check if thread succeeded or failed
+            if thread.exception:
+                raise thread.exception
+                
+            st.session_state["pipeline_completed"] = True
             st.success("🎉 Audit pipeline completed successfully!")
-            # Clear logs container and starting info message once results are added
             log_placeholder.empty()
             info_placeholder.empty()
         except Exception as e:
+            st.session_state["pipeline_completed"] = False
+            st.session_state["pipeline_error"] = str(e)
             st.error(f"❌ Pipeline execution failed: {e}")
         finally:
             root_logger.removeHandler(handler)
             root_logger.setLevel(old_level)
 
-# Display final results if they exist
+# Display final results if they exist and pipeline was completed successfully in this session
 settings = get_settings()
 output_path = settings.LOCAL_OUTPUT_PATH
 
-if os.path.exists(output_path):
+if st.session_state.get("pipeline_error"):
+    st.error(f"❌ Pipeline execution failed: {st.session_state['pipeline_error']}")
+
+if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
     st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
     st.markdown('<h3 style="color: #ff8f00;">📊 Audit Results Report</h3>', unsafe_allow_html=True)
     

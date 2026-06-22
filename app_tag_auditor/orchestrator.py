@@ -88,49 +88,65 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     tele_val, run_val = TelemetryValidatorAgent(), RuntimeValidatorAgent()
     expected_names = {e.event_name for e in expected_events}
 
-    for plan in crawl_plans:
-        matching_event = next((e for e in expected_events if e.event_name == plan.event_name and e.screen == plan.screen), None)
-        if not matching_event:
-            continue
+    try:
+        for plan in crawl_plans:
+            matching_event = next((e for e in expected_events if e.event_name == plan.event_name and e.screen == plan.screen), None)
+            if not matching_event:
+                continue
 
-        try:
-            log_agent.start_capture()
-        except Exception as e:
-            logger.error(f"Failed to start log capture: {e}")
-
-        executor, exec_ok = None, False
-        try:
-            executor = CrawlExecutorAgent(apk_path=apk_path)
-            exec_ok = executor.execute_plan(plan)
-        except Exception as e:
-            logger.error(f"Execution error for plan {plan.event_name}: {e}")
-        finally:
-            if executor is not None:
-                try:
-                    executor.quit()
-                except Exception as e:
-                    logger.warning(f"Error while quitting executor: {e}")
-        
-        # Allow final analytics logs to flush to the adb buffer
-        time.sleep(2)
-        try:
-            log_agent.stop_capture()
-        except Exception as e:
-            logger.error(f"Failed to stop log capture: {e}")
-
-        captured_lines = []
-        while not log_agent._queue.empty():
             try:
-                captured_lines.append(log_agent._queue.get_nowait())
-            except queue.Empty:
-                break
+                log_agent.start_capture()
+            except Exception as e:
+                logger.error(f"Failed to start log capture: {e}")
 
-        parsed_logs = log_agent.parse_lines(captured_lines)
-        captured_for_plan = [log for log in parsed_logs if log.event_name in expected_names]
-        
-        all_captured_logs.extend(captured_for_plan)
-        all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
-        all_runtime.append(run_val.validate_execution(plan.event_name, plan.screen, plan, exec_ok, matching_event.user_action))
+            executor, exec_ok = None, False
+            try:
+                executor = CrawlExecutorAgent(apk_path=apk_path)
+                exec_ok = executor.execute_plan(plan)
+            except Exception as e:
+                logger.error(f"Execution error for plan {plan.event_name}: {e}")
+            finally:
+                if executor is not None:
+                    try:
+                        executor.quit()
+                    except Exception as e:
+                        logger.warning(f"Error while quitting executor: {e}")
+            
+            # Allow final analytics logs to flush to the adb buffer
+            time.sleep(2)
+            try:
+                log_agent.stop_capture()
+            except Exception as e:
+                logger.error(f"Failed to stop log capture: {e}")
+
+            captured_lines = []
+            while not log_agent._queue.empty():
+                try:
+                    captured_lines.append(log_agent._queue.get_nowait())
+                except queue.Empty:
+                    break
+
+            parsed_logs = log_agent.parse_lines(captured_lines)
+            captured_for_plan = [log for log in parsed_logs if log.event_name in expected_names]
+            
+            all_captured_logs.extend(captured_for_plan)
+            all_telemetry.append(tele_val.validate_event(matching_event, captured_for_plan))
+            all_runtime.append(run_val.validate_execution(plan.event_name, plan.screen, plan, exec_ok, matching_event.user_action))
+    except Exception as e:
+        logger.error(f"Failed during crawler execution setup or execution loop: {e}", exc_info=True)
+
+    # Ensure all expected events have some validation results in all_telemetry and all_runtime
+    # before we run combiner, to prevent key mismatch/missing data errors
+    telemetry_map = {(res.event_name, res.screen): res for res in all_telemetry}
+    runtime_map = {(res.event_name, res.screen): res for res in all_runtime}
+    for event in expected_events:
+        key = (event.event_name, event.screen)
+        if key not in telemetry_map:
+            all_telemetry.append(tele_val.validate_event(event, []))
+        if key not in runtime_map:
+            from core.models import CrawlPlan
+            mock_plan = CrawlPlan(event_name=event.event_name, screen=event.screen, steps=[])
+            all_runtime.append(run_val.validate_execution(event.event_name, event.screen, mock_plan, False, event.user_action))
 
     ValidationCombinerAgent().run(expected_events, all_telemetry, all_runtime, code_locations, writer)
     logger.info(f"Audit pipeline completed. Results written to: {settings.LOCAL_OUTPUT_PATH}")

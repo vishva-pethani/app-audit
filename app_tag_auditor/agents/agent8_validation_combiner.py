@@ -430,6 +430,7 @@ class ValidationCombinerAgent:
         wb._sheets = new_sheets
         
         # Save Excel File
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
         wb.save(file_path)
         
         logger.info(f"Audit results successfully written to styled tabs 'Audit Summary' and 'Audit Analysis'.")
