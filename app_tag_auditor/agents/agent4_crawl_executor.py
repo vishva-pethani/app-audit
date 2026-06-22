@@ -111,7 +111,7 @@ class CrawlExecutorAgent:
 
         # 1. App-specific login warning dialog close button
         try:
-            close_btn = self.driver.find_element(AppiumBy.ID, "com.royalenfield.reprime:id/close_btn")
+            close_btn = self.driver.find_element(AppiumBy.ID, f"{self.app_package}:id/close_btn")
             if close_btn and close_btn.is_displayed():
                 logger.info("Auto-dismiss: Found app login alert close button. Dismissing...")
                 close_btn.click()
@@ -176,7 +176,10 @@ class CrawlExecutorAgent:
                                     f'//*[contains(@text,"{target_selector}")]'
                                 )))
                 elif strategy == "resource_id":
-                    return wait.until(EC.presence_of_element_located((AppiumBy.ID, target_selector)))
+                    selector = target_selector
+                    if ":" not in selector and not selector.startswith("android:"):
+                        selector = f"{self.app_package}:id/{selector}"
+                    return wait.until(EC.presence_of_element_located((AppiumBy.ID, selector)))
                 elif strategy in ("content_desc", "accessibility_id"):
                     return wait.until(EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, target_selector)))
                 else:

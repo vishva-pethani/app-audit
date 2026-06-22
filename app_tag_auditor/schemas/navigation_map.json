@@ -16,10 +16,10 @@
   ],
   "profile": [
     {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "accessibility_id"},
-    {"action_type": "tap", "target_selector": "com.royalenfield.reprime:id/img_profile", "value": null, "selector_strategy": "resource_id"}
+    {"action_type": "tap", "target_selector": "img_profile", "value": null, "selector_strategy": "resource_id"}
   ],
   "more_menu": [
     {"action_type": "tap", "target_selector": "My RE", "value": null, "selector_strategy": "accessibility_id"},
-    {"action_type": "tap", "target_selector": "com.royalenfield.reprime:id/img_moreMenu", "value": null, "selector_strategy": "resource_id"}
+    {"action_type": "tap", "target_selector": "img_moreMenu", "value": null, "selector_strategy": "resource_id"}
   ]
 }

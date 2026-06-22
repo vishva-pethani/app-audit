@@ -105,17 +105,17 @@ class CrawlPlannerAgent:
             any(x in ua_lower for x in ["click on hamburger", "click hamburger", "tap on hamburger", "tap hamburger", "hamburger icon", "more menu", "side menu", "hamburger button"])
         )
 
-        # Hardcoded overrides for Royal Enfield application events to ensure stable resource-id lookups.
+        # Relative resource ID overrides (will be qualified with the active package name at runtime)
         if "add_motorcycle" in event_lower:
-            return ("com.royalenfield.reprime:id/add_btn", "resource_id")
+            return ("add_btn", "resource_id")
         elif "book_service" in event_lower:
-            return ("com.royalenfield.reprime:id/book_now_layout", "resource_id")
+            return ("book_now_layout", "resource_id")
         elif "view_service_history" in event_lower:
-            return ("com.royalenfield.reprime:id/service_history_card_view", "resource_id")
+            return ("service_history_card_view", "resource_id")
         elif is_profile_trigger:
-            return ("com.royalenfield.reprime:id/img_profile", "resource_id")
+            return ("img_profile", "resource_id")
         elif is_hamburger_trigger:
-            return ("com.royalenfield.reprime:id/img_moreMenu", "resource_id")
+            return ("img_moreMenu", "resource_id")
 
         # 1. Check if click/CTA parameter text is defined
         target_param_names = {"clicktext", "buttontext", "label", "ctatext"}

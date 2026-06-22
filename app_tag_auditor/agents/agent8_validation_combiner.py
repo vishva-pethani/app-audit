@@ -25,7 +25,8 @@ def _format_captured_log(log: CapturedLog) -> str:
 
     params_lines = []
     # Add some standard Firebase analytics params to look premium
-    params_lines.append("regionCode=com.royalenfield.reprime")
+    package_name = (log.raw_params.get("regionCode") or log.raw_params.get("package_name") or "com.example.app") if log.raw_params else "com.example.app"
+    params_lines.append(f"regionCode={package_name}")
     params_lines.append("countryCode=IN")
     params_lines.append("tyc_environment=REAPPDEV_2.0")
     
