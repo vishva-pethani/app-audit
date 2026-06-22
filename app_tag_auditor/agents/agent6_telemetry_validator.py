@@ -15,6 +15,30 @@ class TelemetryValidatorAgent:
     Agent6 TelemetryValidatorAgent:
     Validates Firebase telemetry log parameters against expected schemas.
     """
+    # System parameters that should not be marked as issues/extra parameters.
+    IGNORED_SYSTEM_PARAMS = {
+        "firebase_screen",
+        "firebase_screen_class",
+        "firebase_screen_id",
+        "ga_session_id",
+        "ga_session_number",
+        "engagement_time_msec",
+        "firebase_event_origin",
+        "firebase_previous_screen",
+        "firebase_previous_class",
+        "firebase_previous_id",
+        "debug_mode",
+        "firebase_conversion",
+        "firebase_error",
+        "firebase_error_value",
+        "manual_tracking",
+        "ga_event_origin",
+        "regionCode",
+        "appIdentificationValue",
+        "tvc_environment",
+        "countryCode"
+    }
+
     def __init__(self, config: dict | None = None):
         self.config = config or {}
 
@@ -42,9 +66,11 @@ class TelemetryValidatorAgent:
         # Evaluate all matching logs to find the one that best fits the schema
         for log in matching_logs:
             expected_keys = {p.param_name for p in event.expected_params}
-            actual_keys = set(log.raw_params.keys())
+            
+            # Filter out the ignored system parameters to evaluate true extra parameters
+            actual_keys = {k for k in log.raw_params.keys() if k not in self.IGNORED_SYSTEM_PARAMS}
 
-            missing_keys = list(expected_keys - actual_keys)
+            missing_keys = list(expected_keys - set(log.raw_params.keys()))
             extra_keys = list(actual_keys - expected_keys)
             mismatched_keys = []
 
