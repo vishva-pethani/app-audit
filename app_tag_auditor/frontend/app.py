@@ -48,7 +48,7 @@ except Exception:
 from core.config import get_settings
 from core.drive_client import DriveClient
 from core.sheets_client import SheetsClient
-from frontend.components.drive_picker import render_drive_picker
+from frontend.components.drive_picker import render_drive_picker, render_google_auth
 from orchestrator import run_pipeline
 
 st.set_page_config(
@@ -185,7 +185,7 @@ with col1:
 
 with col2:
     st.markdown('<h3 style="color: #ff8f00;">📊 Event Schema Sheet</h3>', unsafe_allow_html=True)
-    schema_source = st.radio("Select Schema Source", ["Local Upload", "Google Drive Sheets Picker"], key="schema_source")
+    schema_source = st.radio("Select Schema Source", ["Local Upload", "Google Sheets URL"], key="schema_source")
     
     if schema_source == "Local Upload":
         uploaded_schema = st.file_uploader("Upload Schema file (CSV or Excel)", type=["csv", "xlsx", "xls"])
@@ -199,14 +199,25 @@ with col2:
             st.session_state["schema_path"] = local_schema_path
             st.success(f"✅ Loaded Local Schema: `{uploaded_schema.name}`")
     else:
-        sheet_drive = render_drive_picker(
-            key="sheet",
-            label="Pick Google Sheet from Drive",
-            mime_types="application/vnd.google-apps.spreadsheet"
-        )
-        if sheet_drive:
-            st.info(f"Selected Sheet from Drive: `{sheet_drive['file_name']}`")
-            st.session_state["sheet_drive"] = sheet_drive
+        schema_url = st.text_input("Paste Google Sheet URL", value="", key="schema_url")
+        token = None
+        apk_drive = st.session_state.get("apk_drive")
+        if apk_drive:
+            token = apk_drive.get("access_token")
+            
+        if not token:
+            token = render_google_auth(
+                key="sheet_url_auth",
+                label="🔑 Connect Google Account"
+            )
+            
+        if token:
+            st.session_state["google_auth_token"] = token
+            if schema_url:
+                st.success("✅ Google Account Connected & Sheet URL Ready")
+        else:
+            if schema_url:
+                st.warning("⚠️ Please connect your Google Account to download the sheet.")
 
 # Run Pipeline Action Section
 st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
@@ -238,22 +249,28 @@ if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
                     st.error(f"Failed to download APK: {e}")
                     download_success = False
 
-    if schema_source == "Google Drive Sheets Picker" and download_success:
-        sheet_drive = st.session_state.get("sheet_drive")
-        if not sheet_drive:
-            st.error("Please pick a Google Sheet from Drive.")
+    if schema_source == "Google Sheets URL" and download_success:
+        schema_url = st.session_state.get("schema_url")
+        if not schema_url:
+            st.error("Please paste the Google Sheet URL.")
             download_success = False
         else:
-            with st.spinner(f"📥 Downloading Google Sheet from Drive: {sheet_drive['file_name']}..."):
-                try:
-                    creds = Credentials(token=sheet_drive["access_token"])
-                    sheets_client = SheetsClient(credentials=creds)
-                    dest_sheet_path = os.path.join(temp_dir, f"{sheet_drive['file_name']}.xlsx")
-                    sheets_client.download_sheet_as_excel(sheet_drive["file_id"], dest_sheet_path)
-                    schema_path = dest_sheet_path
-                except Exception as e:
-                    st.error(f"Failed to download Google Sheet: {e}")
-                    download_success = False
+            token = st.session_state.get("google_auth_token") or (st.session_state.get("apk_drive") or {}).get("access_token")
+            if not token:
+                st.error("Google authentication token is missing. Please authorize your Google Account first.")
+                download_success = False
+            else:
+                with st.spinner("📥 Downloading Google Sheet from URL..."):
+                    try:
+                        sheet_id = SheetsClient.extract_sheet_id_from_url(schema_url)
+                        creds = Credentials(token=token)
+                        sheets_client = SheetsClient(credentials=creds)
+                        dest_sheet_path = os.path.join(temp_dir, f"sheet_{sheet_id}.xlsx")
+                        sheets_client.download_sheet_as_excel(sheet_id, dest_sheet_path)
+                        schema_path = dest_sheet_path
+                    except Exception as e:
+                        st.error(f"Failed to download Google Sheet: {e}")
+                        download_success = False
 
     if not apk_path:
         st.error("Missing target APK file.")
@@ -337,10 +354,10 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
     # Determine the output download filename dynamically based on the input schema name
     schema_source = st.session_state.get("schema_source")
     given_sheet_name = "results"
-    if schema_source == "Google Drive Sheets Picker":
-        sheet_drive = st.session_state.get("sheet_drive")
-        if sheet_drive and sheet_drive.get("file_name"):
-            given_sheet_name = sheet_drive["file_name"]
+    if schema_source == "Google Sheets URL":
+        schema_url = st.session_state.get("schema_url")
+        if schema_url:
+            given_sheet_name = SheetsClient.extract_sheet_id_from_url(schema_url)
     else:
         schema_path = st.session_state.get("schema_path")
         if schema_path:

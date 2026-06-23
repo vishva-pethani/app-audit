@@ -204,3 +204,120 @@ def render_drive_picker(
     components.html(picker_html, height=height)
 
     return st.session_state.get(f"drive_selection_{key}")
+
+def get_auth_html(client_id: str, key: str, label: str) -> str:
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+     body {{
+          margin: 0;
+          padding: 0;
+          display: flex;
+          justify-content: center;
+          align-items: flex-start;
+          height: 100vh;
+          background: transparent;
+          font-family: 'Outfit', sans-serif;
+          overflow: hidden;
+     }}
+     .auth-btn {{
+          background: linear-gradient(135deg, #ff4b4b 0%, #ff8f00 100%);
+          color: white;
+          border: none;
+          padding: 12px 24px;
+          font-size: 16px;
+          font-weight: 600;
+          border-radius: 8px;
+          cursor: pointer;
+          box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4);
+          transition: transform 0.2s, box-shadow 0.2s;
+          white-space: nowrap;
+     }}
+     .auth-btn:hover {{
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(255, 75, 75, 0.6);
+     }}
+     .auth-btn:active {{
+          transform: translateY(1px);
+     }}
+     .auth-btn:disabled {{
+          background: #4a5568;
+          box-shadow: none;
+          cursor: not-allowed;
+     }}
+  </style>
+</head>
+<body>
+  <button id="auth-button" class="auth-btn" disabled>Loading Google Auth...</button>
+  <script>
+    let tokenClient;
+    
+    window.onload = function() {{
+        let gsiInterval = setInterval(() => {{
+            if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {{
+                clearInterval(gsiInterval);
+                enableButton();
+            }}
+        }}, 100);
+    }};
+
+    function enableButton() {{
+        const btn = document.getElementById('auth-button');
+        btn.disabled = false;
+        btn.innerText = "{label}";
+        
+        tokenClient = google.accounts.oauth2.initTokenClient({{
+            client_id: '{client_id}',
+            scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+            callback: (tokenResponse) => {{
+                if (tokenResponse && tokenResponse.access_token) {{
+                    const currentUrl = new URL(window.top.location.href);
+                    currentUrl.searchParams.set('google_auth_token', tokenResponse.access_token);
+                    currentUrl.searchParams.set('auth_key', '{key}');
+                    window.top.location.href = currentUrl.toString();
+                }} else {{
+                    console.error("No access token returned", tokenResponse);
+                    alert("Authentication failed. Please try again.");
+                }}
+            }},
+        }});
+        
+        btn.onclick = () => {{
+            tokenClient.requestAccessToken({{ prompt: 'consent' }});
+        }};
+    }}
+  </script>
+</body>
+</html>
+"""
+
+def render_google_auth(
+    key: str = "google_auth",
+    label: str = "Authorize Google Account",
+    height: int = 80
+) -> str | None:
+    """
+    Renders a Google OAuth authorization button to fetch an access token.
+    """
+    settings = get_settings()
+    client_id = settings.GOOGLE_OAUTH_CLIENT_ID
+    if not client_id or client_id == "your-google-oauth-client-id.apps.googleusercontent.com":
+        st.error("⚠️ Google OAuth Client ID is not configured in .env file.")
+        return None
+
+    # Check query params
+    query_params = st.query_params
+    if "google_auth_token" in query_params:
+        target_key = query_params.get("auth_key", "google_auth")
+        st.session_state[f"google_auth_token_{target_key}"] = query_params["google_auth_token"]
+        st.query_params.clear()
+        st.rerun()
+
+    token = st.session_state.get(f"google_auth_token_{key}")
+    if not token:
+        auth_html = get_auth_html(client_id, key, label)
+        components.html(auth_html, height=height)
+    return token
