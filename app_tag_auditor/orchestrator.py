@@ -62,21 +62,15 @@ class RuntimeAuditOrchestrator:
     def reset_best_effort(self) -> None:
         """
         Best-effort screen reset between events.
-        Relaunches the app fresh to ensure a consistent starting point.
+        Navigates back to the main screen without relaunching the app.
         """
-        settings = get_settings()
-        package_name = self.crawl_executor.app_package or settings.ANDROID_APP_PACKAGE
         driver = self.crawl_executor.driver
-        if driver is not None and package_name:
-            logger.info(f"Relaunching app '{package_name}' fresh between events...")
+        if driver is not None:
+            logger.info("Navigating back to main screen between events...")
             try:
-                driver.terminate_app(package_name)
-                time.sleep(1.0)
-                driver.activate_app(package_name)
-                time.sleep(4.0)
                 self.crawl_executor._ensure_on_main_screen()
             except Exception as e:
-                logger.warning(f"Failed to relaunch app between events: {e}")
+                logger.warning(f"Failed to ensure on main screen between events: {e}")
 
     def run_full_audit(self, events_and_plans: list[tuple[ExpectedEvent, CrawlPlan]]) -> list[EventRuntimeCapture]:
         captures = []
