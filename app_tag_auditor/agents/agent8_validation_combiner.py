@@ -67,11 +67,10 @@ def _evaluate_event(
             else:
                 evidence = _format_captured_log(log)
     else:
+        status = "Scenario Not Found"
         if has_code_mapping:
-            status = "Scenario Not Found"
-            evidence = ""
+            comments_list.append("• Event found in codebase but absent in runtime logs.")
         else:
-            status = "Not Implemented"
             comments_list.append("• Event not found in codebase and absent in runtime logs.")
             
     return status, "\n".join(comments_list), evidence
