@@ -139,9 +139,7 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
 
     try:
         captures = orchestrator.run_full_audit(events_and_plans)
-        capture_map = {c.event_name: c for c in captures}
-        for event, plan in events_and_plans:
-            cap = capture_map.get(event.event_name)
+        for (event, plan), cap in zip(events_and_plans, captures):
             logs = cap.captured_logs if cap else []
             all_telemetry.append(tele_val.validate_event(event, logs))
             all_runtime.append(run_val.validate_execution(event.event_name, event.screen, plan, cap is not None, event.user_action))
