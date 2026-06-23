@@ -70,3 +70,12 @@ class FinalAuditRow(BaseModel):
     overall_status: Literal["PASS", "FAIL", "PARTIAL"]
     details: str
     timestamp: str
+
+
+class EventRuntimeCapture(BaseModel):
+    event_name: str
+    trigger_timestamp: str
+    captured_logs: list[CapturedLog]
+    detected_screen_after: Optional[str]
+    detection_source: Literal["signature", "activity", "unknown"]
+

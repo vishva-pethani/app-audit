@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     ANDROID_APP_PACKAGE: Optional[str] = None
     TEMP_STORAGE_DIR: str = "./tmp"
     LLM_PROVIDER: str = "anthropic"
+    RUNTIME_CAPTURE_BUFFER_SECONDS: float = 3.0
+
 
 
     ANTHROPIC_API_KEY: Optional[str] = None
