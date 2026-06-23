@@ -515,6 +515,8 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                     th_style += ' min-width: 300px;'
                 elif col == "Principle":
                     th_style += ' min-width: 250px;'
+                elif col in ["Status", "Static Status Category"]:
+                    th_style += ' min-width: 220px;'
                 html += f'<th style="{th_style}">{col}</th>'
             html += '</tr></thead>'
             
@@ -569,6 +571,8 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                         td_style += ' min-width: 300px;'
                     elif col == "Principle":
                         td_style += ' min-width: 250px;'
+                    elif col in ["Status", "Static Status Category"]:
+                        td_style += ' min-width: 220px;'
                     html += f'<td style="{td_style}">{cell_content}</td>'
                 html += '</tr>'
             html += '</tbody></table></div>'
