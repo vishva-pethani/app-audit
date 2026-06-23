@@ -38,13 +38,26 @@ class RuntimeAuditOrchestrator:
         all_names = {e.event_name for e in self.all_events}
         self.log_agent.start_capture(all_names)
         self.crawl_executor.execute_plan(plan, event=event)
+        detected_screen_immediately, detection_source_immediate = (
+            self.screen_detector.detect(self.crawl_executor.driver)
+            if self.crawl_executor.driver is not None
+            else (None, "unknown")
+        )
         # best-effort: timestamp right after the plan's final step completes (approximate true device-side firing moment)
         trigger_timestamp = datetime.now().isoformat()
         time.sleep(settings.RUNTIME_CAPTURE_BUFFER_SECONDS)
         detected_screen, source = self.screen_detector.detect(self.crawl_executor.driver) if self.crawl_executor.driver is not None else (None, "unknown")
         self.log_agent.stop_capture()
         logs = self.log_agent.get_captured_logs()
-        return EventRuntimeCapture(event_name=event.event_name, trigger_timestamp=trigger_timestamp, captured_logs=logs, detected_screen_after=detected_screen, detection_source=source)
+        return EventRuntimeCapture(
+            event_name=event.event_name,
+            trigger_timestamp=trigger_timestamp,
+            captured_logs=logs,
+            detected_screen_after=detected_screen,
+            detection_source=source,
+            detected_screen_immediately=detected_screen_immediately,
+            detection_source_immediate=detection_source_immediate
+        )
 
     def reset_best_effort(self) -> None:
         """

@@ -45,6 +45,15 @@ class CapturedLog(BaseModel):
     timestamp: str
     source: Literal["logcat"]
 
+class EventRuntimeCapture(BaseModel):
+    event_name: str
+    trigger_timestamp: str
+    captured_logs: list[CapturedLog]
+    detected_screen_after: Optional[str]
+    detection_source: Literal["signature", "activity", "unknown"]
+    detected_screen_immediately: Optional[str] = None
+    detection_source_immediate: Literal["signature", "activity", "unknown"] = "unknown"
+
 class TelemetryValidationResult(BaseModel):
     event_name: str
     screen: str = ""
@@ -61,6 +70,11 @@ class RuntimeValidationResult(BaseModel):
     expected_trigger: str
     actual_trigger_observed: bool
     notes: str
+    fire_count: int = 0
+    not_implemented: bool = False
+    double_fired: bool = False
+    screen_check_status: Literal["correct", "incorrect", "unknown"] = "unknown"
+    unexpected_co_fired_events: list[str] = Field(default_factory=list)
 
 class FinalAuditRow(BaseModel):
     event_name: str
@@ -70,10 +84,3 @@ class FinalAuditRow(BaseModel):
     overall_status: Literal["PASS", "FAIL", "PARTIAL"]
     details: str
     timestamp: str
-
-class EventRuntimeCapture(BaseModel):
-    event_name: str
-    trigger_timestamp: str
-    captured_logs: list[CapturedLog]
-    detected_screen_after: Optional[str]
-    detection_source: Literal["signature", "activity", "unknown"]
