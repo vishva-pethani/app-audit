@@ -6,7 +6,6 @@ import os
 import re
 import sys
 import time
-import queue
 import threading
 import subprocess
 from datetime import datetime
@@ -19,7 +18,7 @@ class LogCaptureAgent:
     """Captures Firebase Analytics debug event logs via `adb logcat`."""
     def __init__(self, device_serial: str | None = None):
         self.device_serial = device_serial
-        self.process, self._queue, self._thread = None, None, None
+        self.process, self._thread = None, None
         self._captured_buffer: list[CapturedLog] = []
         self._buffer_lock = threading.Lock()
         self._expected_names: set[str] = set()
@@ -32,68 +31,102 @@ class LogCaptureAgent:
 
     def _parse_line(self, line: str) -> CapturedLog | None:
         line_str = line.strip()
-        m1 = re.search(r'Logging event \(FE\): (\w+)\((.*)\)$', line_str)
-        if m1:
-            ev_name, params_raw = m1.group(1), m1.group(2)
+        # Format 1: Legacy/Developer logging format
+        match1 = re.search(r'Logging event \(FE\): (\w+)\((.*)\)$', line_str)
+        if match1:
+            event_name, params_raw = match1.group(1), match1.group(2)
             raw_params = {}
             if params_raw:
                 for piece in params_raw.split(", "):
                     if "=" in piece:
                         k, v = piece.split("=", 1)
                         clean_k = re.sub(r'\(_\w+\)$', '', k.strip())
-                        if not clean_k.startswith("_"): raw_params[clean_k] = v.strip()
-            return CapturedLog(event_name=ev_name, raw_params=raw_params, timestamp=datetime.now().isoformat(), source="logcat")
+                        if not clean_k.startswith("_"):
+                            raw_params[clean_k] = v.strip()
+            return CapturedLog(
+                event_name=event_name, raw_params=raw_params,
+                timestamp=datetime.now().isoformat(), source="logcat"
+            )
             
-        m2 = re.search(r'Logging event:\s*origin=\w+,\s*name=([\w_]+)(?:\(_\w+\))?,\s*params=Bundle\[(?:\[|\{)(.*?)(?:\]|\})\]', line_str)
-        if m2:
-            ev_name, params_raw = m2.group(1), m2.group(2)
+        # Format 2: Real verbose device logging format
+        match2 = re.search(r'Logging event:\s*origin=\w+,\s*name=([\w_]+)(?:\(_\w+\))?,\s*params=Bundle\[(?:\[|\{)(.*?)(?:\]|\})\]', line_str)
+        if match2:
+            event_name, params_raw = match2.group(1), match2.group(2)
             raw_params = {}
             if params_raw:
                 for piece in params_raw.split(","):
                     if "=" in piece:
                         k, v = piece.split("=", 1)
                         clean_k = re.sub(r'\(_\w+\)$', '', k.strip())
-                        if not clean_k.startswith("_"): raw_params[clean_k] = v.strip().rstrip("]").rstrip("}").strip()
-            return CapturedLog(event_name=ev_name, raw_params=raw_params, timestamp=datetime.now().isoformat(), source="logcat")
+                        clean_v = v.strip().rstrip("]").rstrip("}").strip()
+                        if not clean_k.startswith("_"):
+                            raw_params[clean_k] = clean_v
+            return CapturedLog(
+                event_name=event_name, raw_params=raw_params,
+                timestamp=datetime.now().isoformat(), source="logcat"
+            )
         return None
 
     def parse_lines(self, lines: list[str]) -> list[CapturedLog]:
         events = []
         i = 0
         while i < len(lines):
-            line_strip = lines[i].strip()
-            if "event {" in line_strip and "FA-SVC" in lines[i]:
-                raw_lines, event_lines, depth = [lines[i].rstrip()], [], 1
+            line = lines[i]
+            line_strip = line.strip()
+            if "event {" in line_strip and "FA-SVC" in line:
+                raw_lines = [line.rstrip()]
+                event_lines = []
+                depth = 1
                 i += 1
                 while i < len(lines) and depth > 0:
-                    curr = lines[i]
-                    raw_lines.append(curr.rstrip())
-                    m = re.search(r'FA(?:-SVC)?\s*(?:\(\s*\d+\s*\))?\s*:\s*(.*)', curr)
-                    content = m.group(1) if m else curr.strip()
-                    depth += content.count("{") - content.count("}")
+                    curr_line = lines[i]
+                    raw_lines.append(curr_line.rstrip())
+                    prefix_match = re.search(r'FA(?:-SVC)?\s*(?:\(\s*\d+\s*\))?\s*:\s*(.*)', curr_line)
+                    content = prefix_match.group(1) if prefix_match else curr_line.strip()
+                    if "{" in content:
+                        depth += content.count("{")
+                    if "}" in content:
+                        depth -= content.count("}")
                     event_lines.append(content)
-                    if depth <= 0: break
+                    if depth <= 0:
+                        break
                     i += 1
-                ev_name, params = "unknown_event", {}
-                in_param, pk, pv = False, None, None
+                
+                event_name = "unknown_event"
+                params = {}
+                in_param = False
+                current_param_name = None
+                current_param_val = None
                 for ev_line in event_lines:
-                    ev_s = ev_line.strip()
-                    if ev_s.startswith("param {"): in_param = True
-                    elif ev_s.startswith("}"):
-                        if in_param and pk and not re.sub(r'\(_\w+\)$', '', pk.strip()).startswith("_"):
-                            params[re.sub(r'\(_\w+\)$', '', pk.strip())] = pv
+                    ev_line_strip = ev_line.strip()
+                    if ev_line_strip.startswith("param {"):
+                        in_param = True
+                    elif ev_line_strip.startswith("}"):
+                        if in_param and current_param_name:
+                            clean_k = re.sub(r'\(_\w+\)$', '', current_param_name.strip())
+                            if not clean_k.startswith("_"):
+                                params[clean_k] = current_param_val
                         in_param = False
-                        pk = pv = None
+                        current_param_name = None
+                        current_param_val = None
                     elif in_param:
-                        if ev_s.startswith("name:"): pk = ev_s.split(":", 1)[1].replace('"', '').strip()
-                        elif any(k in ev_s for k in ["value:", "string_value:", "int_value:"]):
-                            pv = ev_s.split(":", 1)[1].replace('"', '').strip()
-                    elif ev_s.startswith("name:"):
-                        ev_name = re.sub(r'\(_\w+\)$', '', ev_s.split(":", 1)[1].replace('"', '').strip())
-                events.append(CapturedLog(event_name=ev_name, raw_params=params, timestamp=datetime.now().isoformat(), source="logcat"))
+                        if ev_line_strip.startswith("name:"):
+                            current_param_name = ev_line_strip.split(":", 1)[1].replace('"', '').strip()
+                        elif "value:" in ev_line_strip or "string_value:" in ev_line_strip or "int_value:" in ev_line_strip:
+                            current_param_val = ev_line_strip.split(":", 1)[1].replace('"', '').strip()
+                    else:
+                        if ev_line_strip.startswith("name:"):
+                            raw_event_name = ev_line_strip.split(":", 1)[1].replace('"', '').strip()
+                            event_name = re.sub(r'\(_\w+\)$', '', raw_event_name)
+                
+                events.append(CapturedLog(
+                    event_name=event_name, raw_params=params,
+                    timestamp=datetime.now().isoformat(), source="logcat"
+                ))
             else:
-                parsed = self._parse_line(lines[i])
-                if parsed: events.append(parsed)
+                parsed = self._parse_line(line)
+                if parsed:
+                    events.append(parsed)
             i += 1
         return events
 
@@ -102,40 +135,53 @@ class LogCaptureAgent:
         with self._buffer_lock:
             self._expected_names = expected_event_names or set()
             self._captured_buffer.clear()
-            
         subprocess.run(self._adb_cmd("logcat", "-c"), capture_output=True)
         self.process = subprocess.Popen(
             self._adb_cmd("logcat", "-s", "FA:V", "FA-SVC:V"),
             stdout=subprocess.PIPE, text=True, bufsize=1, errors='replace'
         )
-        self._queue = queue.Queue()
         
         def reader():
             buffer_lines = []
-            in_multiline = False
             depth = 0
+            in_multiline = False
             try:
                 for line in iter(self.process.stdout.readline, ''):
                     safe_line = line.strip().encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                    self._queue.put(line)
                     line_strip = safe_line.strip()
-                    if "event {" in line_strip and "FA-SVC" in safe_line:
-                        in_multiline, buffer_lines, depth = True, [safe_line], 1
-                    elif in_multiline:
-                        buffer_lines.append(safe_line)
-                        m = re.search(r'FA(?:-SVC)?\s*(?:\(\s*\d+\s*\))?\s*:\s*(.*)', safe_line)
-                        content = m.group(1) if m else safe_line.strip()
-                        depth += content.count("{") - content.count("}")
+                    if not in_multiline and "event {" in line_strip and "FA-SVC" in line:
+                        in_multiline = True
+                        buffer_lines = [line]
+                        prefix_match = re.search(r'FA(?:-SVC)?\s*(?:\(\s*\d+\s*\))?\s*:\s*(.*)', line)
+                        content = prefix_match.group(1) if prefix_match else line_strip
+                        depth = content.count("{") - content.count("}")
                         if depth <= 0:
-                            for log in self.parse_lines(buffer_lines):
+                            parsed_events = self.parse_lines(buffer_lines)
+                            for log in parsed_events:
                                 if not self._expected_names or log.event_name in self._expected_names:
-                                    with self._buffer_lock: self._captured_buffer.append(log)
+                                    with self._buffer_lock:
+                                        self._captured_buffer.append(log)
+                            in_multiline = False
+                            buffer_lines = []
+                    elif in_multiline:
+                        buffer_lines.append(line)
+                        prefix_match = re.search(r'FA(?:-SVC)?\s*(?:\(\s*\d+\s*\))?\s*:\s*(.*)', line)
+                        content = prefix_match.group(1) if prefix_match else line_strip
+                        depth += (content.count("{") - content.count("}"))
+                        if depth <= 0:
+                            parsed_events = self.parse_lines(buffer_lines)
+                            for log in parsed_events:
+                                if not self._expected_names or log.event_name in self._expected_names:
+                                    with self._buffer_lock:
+                                        self._captured_buffer.append(log)
                             in_multiline = False
                             buffer_lines = []
                     else:
-                        log = self._parse_line(safe_line)
-                        if log and (not self._expected_names or log.event_name in self._expected_names):
-                            with self._buffer_lock: self._captured_buffer.append(log)
+                        log = self._parse_line(line)
+                        if log is not None:
+                            if not self._expected_names or log.event_name in self._expected_names:
+                                with self._buffer_lock:
+                                    self._captured_buffer.append(log)
             except Exception:
                 logger.warning("Error in reader thread:", exc_info=True)
                 
@@ -145,8 +191,10 @@ class LogCaptureAgent:
     def stop_capture(self) -> None:
         if self.process:
             self.process.terminate()
-            try: self.process.wait(timeout=2)
-            except subprocess.TimeoutExpired: self.process.kill()
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
             self.process = None
         if self._thread:
             self._thread.join(timeout=2)
@@ -179,21 +227,25 @@ class LogCaptureAgent:
 if __name__ == "__main__":
     from core.config import get_settings
     from core.output_writer import LocalExcelWriter
+    
     settings = get_settings()
     device_connected = False
     try:
         res = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
         device_connected = any(line.strip().endswith("\tdevice") for line in res.stdout.strip().split("\n")[1:])
-    except Exception: pass
+    except Exception:
+        pass
 
     force_synthetic = "--synthetic" in sys.argv
     if device_connected and not force_synthetic:
         print("=== LIVE ADB CAPTURE MODE ===")
         from agents.agent1_schema_reader import SchemaReaderAgent
-        expected_names = {e.event_name for e in SchemaReaderAgent().run()}
+        events = SchemaReaderAgent().run()
+        expected_names = {e.event_name for e in events}
         agent = LogCaptureAgent()
         if settings.ANDROID_APP_PACKAGE:
             subprocess.run(agent._adb_cmd("shell", "setprop", "debug.firebase.analytics.app", settings.ANDROID_APP_PACKAGE), capture_output=True)
+            print(f"Debug mode enabled for: {settings.ANDROID_APP_PACKAGE}")
         print("Please interact with the app now...")
         captured = agent.capture_for_duration(15.0, expected_names)
         LocalExcelWriter().ensure_headers("RawLogs", ["event_name", "raw_params", "timestamp", "source"])
@@ -218,9 +270,12 @@ if __name__ == "__main__":
         parsed = agent.parse_lines(sample_lines)
         for log in parsed:
             print(log.model_dump_json(indent=2))
+        
         os.makedirs("./tmp", exist_ok=True)
         temp_writer = LocalExcelWriter("./tmp/test_logs.xlsx")
         agent.write_logs_to_output(parsed, temp_writer)
         print("Read back logs:")
-        for row in temp_writer.read_all("RawLogs"): print(row)
-        if os.path.exists("./tmp/test_logs.xlsx"): os.remove("./tmp/test_logs.xlsx")
+        for row in temp_writer.read_all("RawLogs"):
+            print(row)
+        if os.path.exists("./tmp/test_logs.xlsx"):
+            os.remove("./tmp/test_logs.xlsx")

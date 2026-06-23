@@ -21,7 +21,6 @@ class Settings(BaseSettings):
     RUNTIME_CAPTURE_BUFFER_SECONDS: float = 3.0
 
 
-
     ANTHROPIC_API_KEY: Optional[str] = None
     COMPANY_LLM_GATEWAY_URL: Optional[str] = None
     COMPANY_LLM_GATEWAY_API_KEY: Optional[str] = None
