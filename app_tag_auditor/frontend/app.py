@@ -500,6 +500,84 @@ if "pipeline_running" not in st.session_state:
 if "pipeline_error" not in st.session_state:
     st.session_state["pipeline_error"] = None
 
+# Check if pipeline is running
+if st.session_state.get("pipeline_running"):
+    thread = st.session_state.get("pipeline_thread")
+    bridge = st.session_state.get("interaction_bridge")
+    log_queue = st.session_state.get("log_queue")
+    log_buffer = st.session_state.get("log_buffer", [])
+    
+    # Check if thread finished
+    if thread and not thread.is_alive():
+        # Clean up logging handler
+        handler = st.session_state.get("streamlit_log_handler")
+        old_level = st.session_state.get("old_log_level", logging.INFO)
+        if handler:
+            logging.getLogger().removeHandler(handler)
+            st.session_state["streamlit_log_handler"] = None
+        logging.getLogger().setLevel(old_level)
+        
+        st.session_state["pipeline_running"] = False
+        if thread.exception:
+            st.session_state["pipeline_completed"] = False
+            st.session_state["pipeline_error"] = str(thread.exception)
+        else:
+            st.session_state["pipeline_completed"] = True
+            
+        st.rerun()
+        
+    # Read any new logs
+    while log_queue and not log_queue.empty():
+        try:
+            msg = log_queue.get_nowait()
+            log_buffer.append(msg)
+        except Exception:
+            break
+    st.session_state["log_buffer"] = log_buffer
+    
+    st.markdown('<div class="step-card" style="border-left-color: #7f00c6 !important; background: rgba(127,0,198,0.03) !important;"><h4>⏳ Pipeline Executing</h4><p>The automated audit pipeline is running on the connected Android device. Real-time telemetry logs are displaying below.</p></div>', unsafe_allow_html=True)
+    
+    # Check for login intervention
+    if bridge and bridge.login_detected.is_set():
+        st.markdown("""
+        <div style="background: rgba(255, 143, 0, 0.05); border: 2px solid #ff8f00; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; box-shadow: 0 0 20px rgba(255, 143, 0, 0.15);">
+            <h3 style="color: #ff8f00; margin-top: 0; display: flex; align-items: center; gap: 10px;">
+                🔑 Login/Signup Screen Detected!
+            </h3>
+            <p style="color: #d8c2e6; font-size: 0.95rem; line-height: 1.5;">
+                The device is currently stopped at a screen offering login or registration. Please select how you want the crawler to proceed:
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col_act1, col_act2, col_act3 = st.columns(3)
+        with col_act1:
+            if st.button("🤖 Proceed / Auto-Inject", use_container_width=True, type="primary", key="btn_hitl_auto"):
+                bridge.user_decision = "auto"
+                bridge.user_responded.set()
+                st.rerun()
+        with col_act2:
+            if st.button("Skip / Go Back", use_container_width=True, key="btn_hitl_skip"):
+                bridge.user_decision = "skip"
+                bridge.user_responded.set()
+                st.rerun()
+        with col_act3:
+            if st.button("🛑 Abort Audit", use_container_width=True, key="btn_hitl_abort"):
+                bridge.user_decision = "abort"
+                bridge.user_responded.set()
+                st.rerun()
+    
+    # Render logs
+    st.markdown('<h4 style="color: #ff8f00;">📺 Console Output</h4>', unsafe_allow_html=True)
+    st.code("\n".join(log_buffer), language="text")
+    
+    # Rerun after a delay to poll for updates
+    if not (bridge and bridge.login_detected.is_set()):
+        time.sleep(0.8)
+        st.rerun()
+        
+    st.stop()
+
 class StreamlitLogHandler(logging.Handler):
     def __init__(self, log_queue):
         super().__init__()
@@ -512,16 +590,24 @@ class StreamlitLogHandler(logging.Handler):
         except Exception:
             pass
 
+class InteractionBridge:
+    def __init__(self):
+        self.login_detected = threading.Event()
+        self.user_responded = threading.Event()
+        self.screen_hierarchy = ""
+        self.user_decision = None # 'auto', 'skip', 'abort'
+
 class PipelineThread(threading.Thread):
-    def __init__(self, apk_path, schema_path):
+    def __init__(self, apk_path, schema_path, interaction_bridge=None):
         super().__init__()
         self.apk_path = apk_path
         self.schema_path = schema_path
+        self.interaction_bridge = interaction_bridge
         self.exception = None
 
     def run(self):
         try:
-            run_pipeline(apk_path=self.apk_path, schema_path=self.schema_path)
+            run_pipeline(apk_path=self.apk_path, schema_path=self.schema_path, interaction_bridge=self.interaction_bridge)
         except Exception as e:
             self.exception = e
 
@@ -652,13 +738,9 @@ if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
         download_success = False
 
     if download_success:
-        info_placeholder = st.empty()
-        info_placeholder.info("Pipeline execution starting. Real-time console logs will display below:")
-        
         # Setup logging redirection to Streamlit UI via queue
         log_queue = queue.Queue()
         root_logger = logging.getLogger()
-        log_placeholder = st.empty()
         handler = StreamlitLogHandler(log_queue)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         old_level = root_logger.level
@@ -667,50 +749,20 @@ if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
         
         st.session_state["pipeline_completed"] = False
         st.session_state["pipeline_error"] = None
+        st.session_state["log_queue"] = log_queue
+        st.session_state["log_buffer"] = []
+        st.session_state["streamlit_log_handler"] = handler
+        st.session_state["old_log_level"] = old_level
         
-        # Start pipeline execution in background thread
-        thread = PipelineThread(apk_path=apk_path, schema_path=schema_path)
+        # Start pipeline execution in background thread with InteractionBridge
+        bridge = InteractionBridge()
+        st.session_state["interaction_bridge"] = bridge
+        
+        thread = PipelineThread(apk_path=apk_path, schema_path=schema_path, interaction_bridge=bridge)
         thread.start()
-        
-        log_buffer = []
-        try:
-            while thread.is_alive():
-                updated = False
-                while not log_queue.empty():
-                    try:
-                        msg = log_queue.get_nowait()
-                        log_buffer.append(msg)
-                        updated = True
-                    except queue.Empty:
-                        break
-                if updated:
-                    log_placeholder.code("\n".join(log_buffer))
-                time.sleep(0.2)
-                
-            # Process remaining logs
-            while not log_queue.empty():
-                try:
-                    msg = log_queue.get_nowait()
-                    log_buffer.append(msg)
-                except queue.Empty:
-                    break
-            log_placeholder.code("\n".join(log_buffer))
-            
-            # Check if thread succeeded or failed
-            if thread.exception:
-                raise thread.exception
-                
-            st.session_state["pipeline_completed"] = True
-            st.success("🎉 Audit pipeline completed successfully!")
-            log_placeholder.empty()
-            info_placeholder.empty()
-        except Exception as e:
-            st.session_state["pipeline_completed"] = False
-            st.session_state["pipeline_error"] = str(e)
-            st.error(f"❌ Pipeline execution failed: {e}")
-        finally:
-            root_logger.removeHandler(handler)
-            root_logger.setLevel(old_level)
+        st.session_state["pipeline_thread"] = thread
+        st.session_state["pipeline_running"] = True
+        st.rerun()
 
 # Display final results if they exist and pipeline was completed successfully in this session
 settings = get_settings()

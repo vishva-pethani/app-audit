@@ -83,7 +83,7 @@ class RuntimeAuditOrchestrator:
                 self.reset_best_effort()
         return captures
 
-def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = None, schema_path: str = "schemas/sample_schema.csv") -> None:
+def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = None, schema_path: str = "schemas/sample_schema.csv", interaction_bridge=None) -> None:
     logger.info(f"Starting pipeline for APK: {apk_path}")
     settings = get_settings()
     if os.path.exists(settings.LOCAL_OUTPUT_PATH):
@@ -129,7 +129,7 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     subprocess.run(log_agent._adb_cmd("shell", "setprop", "debug.firebase.analytics.app", settings.ANDROID_APP_PACKAGE), capture_output=True)
     subprocess.run(log_agent._adb_cmd("shell", "am", "force-stop", settings.ANDROID_APP_PACKAGE), capture_output=True)
 
-    executor = CrawlExecutorAgent(apk_path=apk_path)
+    executor = CrawlExecutorAgent(apk_path=apk_path, interaction_bridge=interaction_bridge)
     screen_detector = ScreenDetector()
     orchestrator = RuntimeAuditOrchestrator(executor, log_agent, screen_detector, expected_events)
 

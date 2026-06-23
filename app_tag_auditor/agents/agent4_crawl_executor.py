@@ -13,13 +13,14 @@ class CrawlExecutorAgent:
     Performs UI interactions on a connected Android device via Appium
     by executing sequentially sorted CrawlPlan steps.
     """
-    def __init__(self, apk_path: str, appium_server_url: str | None = None, app_package: str | None = None):
+    def __init__(self, apk_path: str, appium_server_url: str | None = None, app_package: str | None = None, interaction_bridge=None):
         from core.config import get_settings
         settings = get_settings()
         
         self.apk_path = apk_path
         self.appium_server_url = appium_server_url or settings.APPIUM_SERVER_URL
         self.app_package = app_package or settings.ANDROID_APP_PACKAGE
+        self.bridge = interaction_bridge
         
         if not self.app_package:
             raise ValueError(
@@ -28,6 +29,59 @@ class CrawlExecutorAgent:
             )
         self.driver = None
         self.logger = logger
+
+    def _check_login_intervention(self):
+        """Checks if login/signup options are visible on screen, and triggers interaction bridge if configured."""
+        if not self.bridge:
+            return
+
+        try:
+            from core.ui_hierarchy import dump_hierarchy, parse_hierarchy
+            xml_str = dump_hierarchy(self.driver)
+            root = parse_hierarchy(xml_str)
+            if root is not None:
+                keywords = ["login", "log in", "signin", "sign in", "signup", "sign up", "register", "create account", "forgot password", "password"]
+                found_keyword = False
+                for node in root.iter():
+                    text = (node.attrib.get('text') or '').lower()
+                    desc = (node.attrib.get('content-desc') or '').lower()
+                    res_id = (node.attrib.get('resource-id') or '').lower()
+                    combined = f"{text} {desc} {res_id}"
+                    for kw in keywords:
+                        if kw in combined:
+                            found_keyword = True
+                            break
+                    if found_keyword:
+                        break
+                
+                if found_keyword:
+                    logger.info("🔑 Login/signup screen option detected! Pausing and waiting for user instruction...")
+                    self.bridge.screen_hierarchy = xml_str
+                    self.bridge.user_responded.clear()
+                    self.bridge.login_detected.set()
+                    
+                    # Wait for user input
+                    self.bridge.user_responded.wait()
+                    
+                    decision = self.bridge.user_decision
+                    logger.info(f"User responded with decision: {decision}")
+                    
+                    if decision == "abort":
+                        raise Exception("Audit pipeline aborted by user choice on login screen.")
+                    elif decision == "skip":
+                        logger.info("User requested to skip login screen. Attempting to navigate back...")
+                        try:
+                            self.driver.back()
+                        except Exception as back_err:
+                            logger.warning(f"Failed to go back: {back_err}")
+                    elif decision == "auto":
+                        logger.info("User requested to proceed. Continuing with standard executor flow.")
+                    
+                    self.bridge.login_detected.clear()
+        except Exception as e:
+            if "aborted by user" in str(e):
+                raise
+            logger.error(f"Error checking login intervention: {e}")
 
     def _build_driver(self):
         """Initializes the Appium WebDriver driver connection."""
@@ -58,6 +112,7 @@ class CrawlExecutorAgent:
         for attempt in range(4):
             # First, check and dismiss any popups
             self._dismiss_popups()
+            self._check_login_intervention()
             
             # Check if our app package is in the foreground
             try:
@@ -209,8 +264,9 @@ class CrawlExecutorAgent:
         """Executes a single step action on the device UI."""
         logger.info(f"Executing step {step.step_order}: {step.action_type} target={step.target_selector} strategy={step.selector_strategy}")
         
-        # Pre-step popup cleanup
+        # Pre-step popup cleanup and login check
         self._dismiss_popups()
+        self._check_login_intervention()
 
         try:
             if step.action_type == "tap":
@@ -243,13 +299,14 @@ class CrawlExecutorAgent:
             logger.error(f"Step {step.step_order} execution failed: {e}")
             return False
         finally:
-            # Post-step popup cleanup
+            # Post-step popup cleanup and login check
             self._dismiss_popups()
+            self._check_login_intervention()
 
     def execute_plan(self, plan: CrawlPlan, event: ExpectedEvent | None = None) -> bool:
         """Runs the complete ordered steps in a CrawlPlan."""
         if event is not None:
-            self.logger.debug(f"execute_plan called for event '{event.event_name}' (login-detection logic not yet wired in).")
+            self.logger.debug(f"execute_plan called for event '{event.event_name}'. Checking login states.")
         if self.driver is None:
             self._build_driver()
 
