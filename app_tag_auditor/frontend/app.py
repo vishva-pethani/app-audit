@@ -583,7 +583,7 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                 html += '</div>'
                 html += '</form>'
                 
-            st.markdown(html, unsafe_allow_html=True)
+            st.html(html)
 
         tabs = st.tabs(sorted_sheet_names)
         for i, sheet_name in enumerate(sorted_sheet_names):
