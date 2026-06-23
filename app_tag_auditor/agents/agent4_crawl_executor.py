@@ -3,7 +3,7 @@ import sys
 import time
 from typing import Literal
 from core.logger import get_logger
-from core.models import CrawlPlan, CrawlStep
+from core.models import CrawlPlan, CrawlStep, ExpectedEvent
 
 logger = get_logger(__name__)
 
@@ -27,6 +27,7 @@ class CrawlExecutorAgent:
                 "or passed explicitly to CrawlExecutorAgent."
             )
         self.driver = None
+        self.logger = logger
 
     def _build_driver(self):
         """Initializes the Appium WebDriver driver connection."""
@@ -245,8 +246,10 @@ class CrawlExecutorAgent:
             # Post-step popup cleanup
             self._dismiss_popups()
 
-    def execute_plan(self, plan: CrawlPlan) -> bool:
+    def execute_plan(self, plan: CrawlPlan, event: ExpectedEvent | None = None) -> bool:
         """Runs the complete ordered steps in a CrawlPlan."""
+        if event is not None:
+            self.logger.debug(f"execute_plan called for event '{event.event_name}' (login-detection logic not yet wired in).")
         if self.driver is None:
             self._build_driver()
 
