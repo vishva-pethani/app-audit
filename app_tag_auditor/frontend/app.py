@@ -48,7 +48,7 @@ except Exception:
 from core.config import get_settings
 from core.drive_client import DriveClient
 from core.sheets_client import SheetsClient
-from frontend.components.drive_picker import render_drive_picker, render_google_auth
+import frontend.components.drive_picker as drive_picker
 from orchestrator import run_pipeline
 
 st.set_page_config(
@@ -57,7 +57,224 @@ st.set_page_config(
     layout="wide",
 )
 
+# Custom premium styling loaded globally
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+html, body, [class*="css"], [data-testid="stAppViewContainer"] {
+    font-family: 'Outfit', sans-serif !important;
+    background: var(--background-color) !important;
+    background-color: var(--background-color) !important;
+    color: var(--text-color) !important;
+    overflow-x: hidden;
+}
+
+/* Background Glowing Blobs */
+.bg-glow-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+.bg-glow-orange {
+    position: absolute;
+    top: 15%;
+    left: 20%;
+    width: 450px;
+    height: 450px;
+    background: radial-gradient(circle, rgba(255, 143, 0, 0.05) 0%, rgba(255, 143, 0, 0) 70%);
+    filter: blur(80px);
+}
+.bg-glow-red {
+    position: absolute;
+    bottom: 15%;
+    right: 20%;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(239, 68, 68, 0.04) 0%, rgba(239, 68, 68, 0) 70%);
+    filter: blur(90px);
+}
+
+/* Slide Up & Fade In Animations */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulseGlow {
+    0% {
+        box-shadow: 0 0 20px rgba(255, 143, 0, 0.2);
+        border-color: rgba(255, 143, 0, 0.3);
+    }
+    100% {
+        box-shadow: 0 0 35px rgba(255, 143, 0, 0.45);
+        border-color: rgba(255, 143, 0, 0.6);
+    }
+}
+
+/* Main Welcome Page Wrapper */
+.welcome-wrapper {
+    position: relative;
+    z-index: 10;
+    max-width: 460px;
+    margin: 6vh auto;
+    animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Glassmorphism Card Container */
+.login-card {
+    background: var(--secondary-background-color) !important;
+    border: 1px solid rgba(128, 128, 128, 0.15) !important;
+    backdrop-filter: blur(24px) !important;
+    -webkit-backdrop-filter: blur(24px) !important;
+    border-radius: 24px;
+    padding: 3.5rem 2.5rem;
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.08), 0 0 30px rgba(255, 143, 0, 0.03);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.75rem;
+}
+
+/* Pulse Glowing Badge for Logo */
+.logo-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 84px;
+    height: 84px;
+    background: radial-gradient(135deg, rgba(255, 143, 0, 0.15) 0%, rgba(239, 68, 68, 0.04) 100%);
+    border: 1px solid rgba(255, 143, 0, 0.3);
+    border-radius: 20px;
+    margin-bottom: 0.5rem;
+    animation: pulseGlow 3s infinite alternate ease-in-out;
+}
+
+/* Cinematic Title */
+.login-title {
+    font-size: 2.25rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.5px !important;
+    margin: 0 !important;
+    background: linear-gradient(135deg, #ff8f00 0%, #ef4444 100%) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* High Contrast Description */
+.login-subtitle {
+    color: var(--text-color) !important;
+    opacity: 0.75 !important;
+    font-size: 0.975rem !important;
+    line-height: 1.6 !important;
+    max-width: 320px;
+    margin: 0 auto 0.5rem auto !important;
+}
+
+/* Google Sign-in Button styling */
+.google-login-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: var(--background-color) !important;
+    color: var(--text-color) !important;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba(128, 128, 128, 0.2) !important;
+}
+
+.google-login-btn:hover {
+    background-color: var(--secondary-background-color) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(255, 143, 0, 0.3);
+}
+
+.google-login-btn:active {
+    transform: translateY(0);
+}
+
+.google-icon {
+    display: block;
+}
+
+/* General app body formatting after login */
+.main {
+    background: transparent !important;
+}
+
+.glass-container {
+    background: var(--secondary-background-color) !important;
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(128, 128, 128, 0.15) !important;
+    padding: 2.5rem;
+    margin: 2rem 0;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.08);
+}
+
+.gradient-title {
+    background: linear-gradient(135deg, #ff8f00 0%, #ef4444 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    font-size: 2.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.sub-title {
+    color: var(--text-color) !important;
+    opacity: 0.75 !important;
+    font-size: 1.15rem;
+    margin-bottom: 2rem;
+}
+
+.step-card {
+    background: rgba(255, 143, 0, 0.03) !important;
+    border-left: 4px solid #ff8f00 !important;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.step-card h4 {
+    margin-top: 0;
+    color: #ff8f00;
+}
+</style>
+""", unsafe_allow_html=True)
+
 settings = get_settings()
+
+# Render CSS to hide the communication textareas
+st.markdown("""
+<style>
+div[data-testid="stTextArea"]:has(textarea[aria-label="hidden_auth_widget"]),
+div[data-testid="stTextArea"]:has(textarea[aria-label="hidden_edit_data_widget"]) {
+    display: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -65,6 +282,52 @@ if "google_auth_token" not in st.session_state:
     st.session_state["google_auth_token"] = None
 if "user_profile" not in st.session_state:
     st.session_state["user_profile"] = None
+
+# Hidden auth restore widget
+with st.container():
+    auth_data_json = st.text_area("hidden_auth_widget", key="hidden_auth_widget", value="")
+
+if auth_data_json and not st.session_state["authenticated"]:
+    try:
+        import json
+        auth_data = json.loads(auth_data_json)
+        token = auth_data.get("token")
+        profile = auth_data.get("profile")
+        if token and profile:
+            st.session_state["authenticated"] = True
+            st.session_state["google_auth_token"] = token
+            st.session_state["user_profile"] = profile
+            st.rerun()
+    except Exception:
+        pass
+
+# Check if we should restore from localStorage
+if not st.session_state["authenticated"] and "code" not in st.query_params:
+    st.markdown("""
+    <script>
+    setTimeout(() => {
+        const token = localStorage.getItem("google_auth_token");
+        const profileStr = localStorage.getItem("user_profile");
+        if (token && profileStr) {
+            const textarea = parent.document.querySelector('textarea[aria-label="hidden_auth_widget"]') || document.querySelector('textarea[aria-label="hidden_auth_widget"]');
+            if (textarea && textarea.value === "") {
+                const payload = JSON.stringify({ token: token, profile: JSON.parse(profileStr) });
+                const lastValue = textarea.value;
+                textarea.value = payload;
+                const event = new Event('input', { bubbles: true });
+                event.simulated = true;
+                const tracker = textarea._valueTracker;
+                if (tracker) {
+                    tracker.setValue(lastValue);
+                }
+                textarea.dispatchEvent(event);
+                textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                textarea.blur();
+            }
+        }
+    }, 300);
+    </script>
+    """, unsafe_allow_html=True)
 
 # Check query parameters for incoming Google Authorization Code
 query_params = st.query_params
@@ -99,6 +362,16 @@ if "code" in query_params:
                 st.session_state["authenticated"] = True
                 st.session_state["google_auth_token"] = access_token
                 st.session_state["user_profile"] = profile
+                
+                # Store in localStorage on first login
+                import json
+                st.markdown(f"""
+                <script>
+                localStorage.setItem("google_auth_token", "{access_token}");
+                localStorage.setItem("user_profile", '{json.dumps(profile)}');
+                </script>
+                """, unsafe_allow_html=True)
+                
                 st.query_params.clear()
                 st.rerun()
             else:
@@ -127,94 +400,51 @@ if not st.session_state["authenticated"]:
     # Centered container for login card using columns
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
-        # Login card card container
-        st.markdown(
-            """
-            <div style="background: rgba(22, 28, 45, 0.45); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 28px; padding: 3.5rem 2.5rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2rem;">
-                <h1 style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 2.3rem; font-weight: 800; background: linear-gradient(135deg, #ffffff 40%, #8892b0 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                    <svg viewBox="0 0 24 24" width="38" height="38" fill="rgba(255, 75, 75, 0.15)" stroke="#ff4b4b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; filter: drop-shadow(0 0 12px rgba(255, 75, 75, 0.45));">
-                        <rect x="3" y="11" width="18" height="10" rx="2"></rect>
-                        <circle cx="12" cy="5" r="2"></circle>
-                        <path d="M12 7v4"></path>
-                        <line x1="8" y1="16" x2="8" y2="16"></line>
-                        <line x1="16" y1="16" x2="16" y2="16"></line>
-                    </svg>
-                    App Tag Auditor
-                </h1>
-                <p style="color: #8892b0; font-size: 0.95rem; line-height: 1.6; max-width: 320px; margin: 0 auto; margin-top: 1rem; margin-bottom: 1.5rem;">
-                    Please sign in with your Google account to access the auditing dashboard.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        # Add the Google Sign-in button using Streamlit's native st.link_button!
         if is_btn_disabled:
             st.error("⚠️ Google Client ID is not configured. Please check your .env file.")
         else:
-            st.link_button("🔑 Sign in with Google", auth_url, use_container_width=True)
+            login_card_html = f"""<div class="bg-glow-container">
+<div class="bg-glow-orange"></div>
+<div class="bg-glow-red"></div>
+</div>
+<div class="welcome-wrapper">
+<div class="login-card">
+<div class="logo-badge">
+<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#ff8f00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(255, 143, 0, 0.5));">
+<rect x="3" y="11" width="18" height="10" rx="2"></rect>
+<circle cx="12" cy="5" r="2"></circle>
+<path d="M12 7v4"></path>
+<line x1="8" y1="16" x2="8" y2="16" stroke-linecap="round" stroke-width="2"></line>
+<line x1="16" y1="16" x2="16" y2="16" stroke-linecap="round" stroke-width="2"></line>
+</svg>
+</div>
+<h1 class="login-title">App Tag Auditor</h1>
+<p class="login-subtitle">Please sign in with your Google account to access the auditing dashboard.</p>
+<a href="{auth_url}" target="_self" class="google-login-btn">
+<svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" style="margin-right: 8px;">
+<path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.256-3.133C18.28 1.705 15.49 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.984 0-.742-.08-1.302-.178-1.782h-10.62z"/>
+</svg>
+Sign in with Google
+</a>
+</div>
+</div>"""
+            st.markdown(login_card_html, unsafe_allow_html=True)
             
     st.stop()
 
-# Custom premium styling
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Outfit', sans-serif;
-}
-
-/* Base custom design / background styling */
-.main {
-    background: linear-gradient(135deg, #0e1117 0%, #161a24 100%);
-    color: #ffffff;
-}
-
-/* Glassmorphism card container */
-.glass-container {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 16px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px rgba(255, 255, 255, 0.08) solid;
-    padding: 2.5rem;
-    margin: 2rem 0;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-}
-
-/* Gradient text */
-.gradient-title {
-    background: linear-gradient(45deg, #ff4b4b, #ff8f00);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 800;
-    font-size: 3rem;
-    margin-bottom: 0.5rem;
-}
-
-.sub-title {
-    color: #8892b0;
-    font-size: 1.2rem;
-    margin-bottom: 2rem;
-}
-
-.step-card {
-    background: rgba(255, 255, 255, 0.02);
-    border-left: 4px solid #ff4b4b;
-    border-radius: 4px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
-
-.step-card h4 {
-    margin-top: 0;
-    color: #ff8f00;
-}
-</style>
-""", unsafe_allow_html=True)
+# Custom premium styling already loaded at the top
+if st.session_state.get("authenticated") and st.session_state.get("google_auth_token") and st.session_state.get("user_profile"):
+    import json
+    token = st.session_state["google_auth_token"]
+    profile = st.session_state["user_profile"]
+    st.markdown(f"""
+    <script>
+    if (localStorage.getItem("google_auth_token") !== "{token}") {{
+        localStorage.setItem("google_auth_token", "{token}");
+        localStorage.setItem("user_profile", '{json.dumps(profile)}');
+    }}
+    </script>
+    """, unsafe_allow_html=True)
 
 # Profile Header Section
 if st.session_state.get("authenticated") and st.session_state.get("user_profile"):
@@ -246,6 +476,14 @@ if st.session_state.get("authenticated") and st.session_state.get("user_profile"
                     del st.session_state[k]
             if "apk_drive" in st.session_state:
                 del st.session_state["apk_drive"]
+            
+            st.markdown("""
+            <script>
+            localStorage.removeItem("google_auth_token");
+            localStorage.removeItem("user_profile");
+            </script>
+            """, unsafe_allow_html=True)
+            
             st.rerun()
 else:
     st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
@@ -308,7 +546,7 @@ with col1:
             st.session_state["apk_path"] = local_apk_path
             st.success(f"✅ Loaded Local APK: `{uploaded_apk.name}`")
     else:
-        apk_drive = render_drive_picker(
+        apk_drive = drive_picker.render_drive_picker(
             key="apk",
             label="Pick APK from Google Drive",
             mime_types="application/vnd.android.package-archive",
@@ -338,7 +576,7 @@ with col2:
         token = st.session_state.get("google_auth_token")
         
         if not token:
-            token = render_google_auth(
+            token = drive_picker.render_google_auth(
                 key="sheet_url_auth",
                 label="🔑 Connect Google Account"
             )
@@ -517,14 +755,29 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
         preferred_order = ["Audit Summary", "Audit Analysis"]
         sorted_sheet_names = [s for s in preferred_order if s in sheet_names] + [s for s in sheet_names if s not in preferred_order]
         
-        # Process inline form edits from query params
-        params = st.query_params
-        if params.get("action") == "save_audit":
-            active_sheet = params.get("active_sheet", "Audit Analysis")
+        # Hidden text area for React-based WebSocket updates (prevents page reloads)
+        st.markdown("""
+        <style>
+        div.hidden-text-area {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        with st.container():
+            st.markdown('<div class="hidden-text-area">', unsafe_allow_html=True)
+            edit_data_json = st.text_area("hidden_edit_data_widget", key="hidden_edit_data_widget", value="")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        if edit_data_json:
             try:
+                import json
                 import openpyxl
                 from openpyxl.styles import PatternFill, Font
-                import collections
+                
+                data = json.loads(edit_data_json)
+                active_sheet = data.get("sheet")
+                rows = data.get("rows", {})
                 
                 wb = openpyxl.load_workbook(output_path)
                 if active_sheet in wb.sheetnames:
@@ -544,23 +797,12 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                     gray_fill = PatternFill(start_color="EAECEE", end_color="EAECEE", fill_type="solid")
                     gray_font = Font(name=font_family, size=10, bold=True, color="5D6D7E")
                     
-                    edits = collections.defaultdict(dict)
-                    for k, v in params.items():
-                        if k.startswith("status_"):
-                            row_idx = int(k.split("_")[1])
-                            edits[row_idx]["Status"] = v
-                        elif k.startswith("comments_"):
-                            row_idx = int(k.split("_")[1])
-                            edits[row_idx]["Comments"] = v
-                        elif k.startswith("logs_"):
-                            row_idx = int(k.split("_")[1])
-                            edits[row_idx]["Logs"] = v
-                    
-                    for row_idx, changes in edits.items():
+                    for row_str, changes in rows.items():
+                        row_idx = int(row_str)
                         excel_row = row_idx + 2
                         
-                        if "Status" in changes:
-                            val = changes["Status"]
+                        if "status" in changes:
+                            val = changes["status"]
                             cell = ws.cell(row=excel_row, column=status_col_idx, value=val)
                             if val == "Implemented":
                                 cell.fill = green_fill
@@ -575,11 +817,11 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                                 cell.fill = red_fill
                                 cell.font = red_font
                                 
-                        if "Comments" in changes:
-                            ws.cell(row=excel_row, column=comments_col_idx, value=changes["Comments"])
+                        if "comments" in changes:
+                            ws.cell(row=excel_row, column=comments_col_idx, value=changes["comments"])
                             
-                        if "Logs" in changes:
-                            ws.cell(row=excel_row, column=logs_col_idx, value=changes["Logs"])
+                        if "logs" in changes:
+                            ws.cell(row=excel_row, column=logs_col_idx, value=changes["logs"])
                     
                     # Recalculate summary tab counts
                     if "Audit Summary" in wb.sheetnames:
@@ -606,12 +848,27 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                         ws_summary["B8"] = scenario_not_found_count
                         
                     wb.save(output_path)
-                    st.success("Changes saved successfully!")
+                    st.success("💾 Changes saved successfully! Downloading updated report...")
+                    
+                    import base64
+                    with open(output_path, "rb") as f_excel:
+                        b64_data = base64.b64encode(f_excel.read()).decode()
+                        
+                    st.markdown(f"""
+                    <a id="auto_download_link" download="{export_filename}" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64_data}"></a>
+                    <script>
+                        setTimeout(() => {{
+                            const link = parent.document.getElementById("auto_download_link") || document.getElementById("auto_download_link");
+                            if (link) {{
+                                link.click();
+                            }}
+                        }}, 300);
+                    </script>
+                    """, unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Error saving edits: {e}")
                 
-            st.query_params.clear()
-            st.rerun()
+            st.session_state["hidden_edit_data_widget"] = ""
 
         # Sort sheet names so Audit Summary and Audit Analysis are shown first
         preferred_order = ["Audit Summary", "Audit Analysis"]
@@ -646,10 +903,63 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
             html += ' .audit-logs-textarea:focus { border-color: #ff8f00; outline: none; }'
             html += '</style>'
             
+            # Inject saveAuditEdits JS globally
+            html += """
+<script>
+if (typeof window.saveAuditEdits === 'undefined') {
+    window.saveAuditEdits = function(sheetName) {
+        const container = document.querySelector(`.audit-edit-container[data-sheet="${sheetName}"]`);
+        if (!container) return;
+        
+        const edits = {
+            sheet: sheetName,
+            rows: {}
+        };
+        
+        container.querySelectorAll('select[name^="status_"]').forEach(el => {
+            const rowIdx = el.name.split('_')[1];
+            if (!edits.rows[rowIdx]) edits.rows[rowIdx] = {};
+            edits.rows[rowIdx].status = el.value;
+        });
+        
+        container.querySelectorAll('textarea[name^="comments_"]').forEach(el => {
+            const rowIdx = el.name.split('_')[1];
+            if (!edits.rows[rowIdx]) edits.rows[rowIdx] = {};
+            edits.rows[rowIdx].comments = el.value;
+        });
+        
+        container.querySelectorAll('textarea[name^="logs_"]').forEach(el => {
+            const rowIdx = el.name.split('_')[1];
+            if (!edits.rows[rowIdx]) edits.rows[rowIdx] = {};
+            edits.rows[rowIdx].logs = el.value;
+        });
+        
+        // Find Streamlit hidden textarea in parent / main document
+        const textarea = parent.document.querySelector('div.hidden-text-area textarea') || document.querySelector('div.hidden-text-area textarea');
+        if (!textarea) {
+            console.error("Streamlit hidden communication textarea not found.");
+            return;
+        }
+        
+        // React-compatible value setting
+        const lastValue = textarea.value;
+        textarea.value = JSON.stringify(edits);
+        const event = new Event('input', { bubbles: true });
+        event.simulated = true;
+        const tracker = textarea._valueTracker;
+        if (tracker) {
+            tracker.setValue(lastValue);
+        }
+        textarea.dispatchEvent(event);
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.blur();
+    };
+}
+</script>
+"""
+            
             if not is_summary:
-                html += f'<form action="" method="GET">'
-                html += f'<input type="hidden" name="action" value="save_audit">'
-                html += f'<input type="hidden" name="active_sheet" value="{sheet_name}">'
+                html += f'<form onsubmit="event.preventDefault(); saveAuditEdits(\'{sheet_name}\');" class="audit-edit-container" data-sheet="{sheet_name}">'
 
             html += '<div style="overflow-x: auto; margin: 1rem 0; width: 100%; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">'
             html += '<table style="width: 100%; border-collapse: collapse; background-color: #161a24; font-size: 0.9rem;">'

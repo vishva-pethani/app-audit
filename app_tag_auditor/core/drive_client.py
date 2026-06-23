@@ -59,3 +59,39 @@ class DriveClient:
             logger.error(f"Failed to download file '{file_id}': {e}")
             raise
 
+    def list_files(self, q: str = None) -> list:
+        """
+        Lists files from Google Drive matching the query.
+        
+        Args:
+            q: The search query string for Google Drive (e.g., mimeType = 'application/vnd.android.package-archive').
+            
+        Returns:
+            A list of dicts, each containing 'id', 'name', 'mimeType', etc.
+        """
+        try:
+            token = getattr(self.credentials, 'token', None)
+            if not token:
+                raise ValueError("Credentials do not contain a valid OAuth token.")
+                
+            headers = {"Authorization": f"Bearer {token}"}
+            url = "https://www.googleapis.com/drive/v3/files"
+            params = {
+                "pageSize": 50,
+                "fields": "nextPageToken, files(id, name, mimeType, iconLink, thumbnailLink)",
+                "orderBy": "name,modifiedTime desc"
+            }
+            if q:
+                params["q"] = q
+                
+            response = requests.get(url, headers=headers, params=params)
+            if response.status_code == 200:
+                return response.json().get("files", [])
+            else:
+                logger.error(f"Failed to list files: HTTP {response.status_code} - {response.text}")
+                return []
+        except Exception as e:
+            logger.error(f"Failed to list files: {e}")
+            return []
+
+
