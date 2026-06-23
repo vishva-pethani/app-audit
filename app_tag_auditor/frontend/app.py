@@ -21,7 +21,7 @@ import sys
 # Find all loaded local modules
 local_modules = [
     name for name in sys.modules
-    if name.startswith("core") or name.startswith("agents") or name == "orchestrator"
+    if name.startswith("core") or name.startswith("agents") or name.startswith("frontend") or name == "orchestrator"
 ]
 
 # Reload core.config first so other modules get the new config reference when reloaded
