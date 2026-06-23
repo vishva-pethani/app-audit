@@ -155,6 +155,72 @@ class PipelineThread(threading.Thread):
         except Exception as e:
             self.exception = e
 
+# Initialize global google auth token in session state
+if "google_auth_token" not in st.session_state:
+    st.session_state["google_auth_token"] = None
+
+# Synchronize global token from any existing picker or sheets auth session state
+global_token = st.session_state.get("google_auth_token")
+
+if not global_token:
+    apk_drive = st.session_state.get("drive_selection_apk")
+    if apk_drive and apk_drive.get("access_token"):
+        st.session_state["google_auth_token"] = apk_drive["access_token"]
+        global_token = apk_drive["access_token"]
+
+if not global_token:
+    sheet_auth = st.session_state.get("google_auth_token_sheet_url_auth")
+    if sheet_auth:
+        st.session_state["google_auth_token"] = sheet_auth
+        global_token = sheet_auth
+
+# Render Global Google Account Section
+st.markdown('<h3 style="color: #ff8f00; margin-top: 1.5rem;">🔐 Google Cloud Services Connection</h3>', unsafe_allow_html=True)
+if not global_token:
+    st.markdown(
+        """
+        <div style="background: rgba(255, 75, 75, 0.03); border-left: 4px solid #ff4b4b; border-radius: 8px; padding: 1.2rem; margin-bottom: 1rem;">
+            <p style="color: #8892b0; margin: 0; font-size: 0.95rem;">
+                Connect your Google Account to automatically authorize both picking APKs from Google Drive and downloading schemas from Google Sheets.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    auth_token = render_google_auth(
+        key="global_auth",
+        label="🔑 Connect Google Account",
+        height=80
+    )
+    if auth_token:
+        st.session_state["google_auth_token"] = auth_token
+        st.rerun()
+else:
+    col_status, col_btn = st.columns([5, 1])
+    with col_status:
+        st.markdown(
+            """
+            <div style="background: rgba(46, 204, 113, 0.08); border-left: 4px solid #2ecc71; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <span style="color: #2ecc71; font-weight: 600; font-size: 1.05rem;">✅ Google Account Connected</span>
+                <span style="color: #8892b0; font-size: 0.9rem; margin-left: 10px;">(This session will use your authorized credentials for Drive/Sheets accesses)</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    with col_btn:
+        if st.button("🔌 Disconnect", use_container_width=True):
+            st.session_state["google_auth_token"] = None
+            # Clear all selection & auth states
+            for k in list(st.session_state.keys()):
+                if k.startswith("google_auth_token_") or k.startswith("drive_selection_"):
+                    del st.session_state[k]
+            if "apk_drive" in st.session_state:
+                del st.session_state["apk_drive"]
+            st.rerun()
+
+st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.05); margin: 1.5rem 0;">', unsafe_allow_html=True)
+
 # Two-column layout for file selections
 col1, col2 = st.columns(2)
 
@@ -177,7 +243,8 @@ with col1:
         apk_drive = render_drive_picker(
             key="apk",
             label="Pick APK from Google Drive",
-            mime_types="application/vnd.android.package-archive"
+            mime_types="application/vnd.android.package-archive",
+            token=st.session_state.get("google_auth_token") or ""
         )
         if apk_drive:
             st.info(f"Selected APK from Drive: `{apk_drive['file_name']}`")
@@ -200,24 +267,23 @@ with col2:
             st.success(f"✅ Loaded Local Schema: `{uploaded_schema.name}`")
     else:
         schema_url = st.text_input("Paste Google Sheet URL", value="", key="schema_url")
-        token = None
-        apk_drive = st.session_state.get("apk_drive")
-        if apk_drive:
-            token = apk_drive.get("access_token")
-            
+        token = st.session_state.get("google_auth_token")
+        
         if not token:
             token = render_google_auth(
                 key="sheet_url_auth",
                 label="🔑 Connect Google Account"
             )
+            if token:
+                st.session_state["google_auth_token"] = token
+                st.rerun()
             
         if token:
-            st.session_state["google_auth_token"] = token
             if schema_url:
                 st.success("✅ Google Account Connected & Sheet URL Ready")
         else:
             if schema_url:
-                st.warning("⚠️ Please connect your Google Account to download the sheet.")
+                st.warning("⚠️ Please connect your Google Account using the button above to download the sheet.")
 
 # Run Pipeline Action Section
 st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
