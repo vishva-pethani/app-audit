@@ -57,6 +57,276 @@ st.set_page_config(
     layout="wide",
 )
 
+settings = get_settings()
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if "google_auth_token" not in st.session_state:
+    st.session_state["google_auth_token"] = None
+if "user_profile" not in st.session_state:
+    st.session_state["user_profile"] = None
+
+# Check query parameters for incoming Google Access Token
+query_params = st.query_params
+if "google_auth_access_token" in query_params:
+    access_token = query_params["google_auth_access_token"]
+    try:
+        import requests
+        res = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
+        if res.status_code == 200:
+            profile = res.json()
+            st.session_state["authenticated"] = True
+            st.session_state["google_auth_token"] = access_token
+            st.session_state["user_profile"] = profile
+            st.query_params.clear()
+            st.rerun()
+        else:
+            st.error("Google authentication token verification failed. Please try again.")
+    except Exception as e:
+        st.error(f"Error authenticating with Google: {e}")
+
+# If NOT authenticated, show the login guard page and stop execution!
+if not st.session_state["authenticated"]:
+    client_id = settings.GOOGLE_OAUTH_CLIENT_ID
+    
+    # Check if client ID is configured properly
+    client_id_error_html = ""
+    button_disabled_attr = ""
+    if not client_id or client_id == "your-google-oauth-client-id.apps.googleusercontent.com":
+        client_id_error_html = """
+        <div style="color: #ff4b4b; font-size: 0.95rem; font-weight: 600; padding: 1rem; background: rgba(255, 75, 75, 0.08); border: 1px solid rgba(255, 75, 75, 0.2); border-radius: 12px; width: 100%; margin-top: 1rem;">
+            ⚠️ Google Client ID is not configured. Please check your .env file.
+        </div>
+        """
+        button_disabled_attr = "disabled"
+
+    login_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>🤖 App Tag Auditor — Sign In</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        :root {{
+            --bg-color: #0c0f17;
+            --panel-bg: rgba(22, 28, 45, 0.45);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #ffffff;
+            --text-secondary: #8892b0;
+            --accent: #ff4b4b;
+            --font-main: 'Outfit', sans-serif;
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            transition: all 0.25s ease;
+        }}
+
+        body {{
+            background: var(--bg-color);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }}
+
+        .ambient-glow-1 {{
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 75, 75, 0.15) 0%, rgba(0,0,0,0) 70%);
+            top: -150px;
+            left: -150px;
+            filter: blur(80px);
+            z-index: 1;
+        }}
+
+        .ambient-glow-2 {{
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 143, 0, 0.12) 0%, rgba(0,0,0,0) 70%);
+            bottom: -200px;
+            right: -150px;
+            filter: blur(90px);
+            z-index: 1;
+        }}
+
+        .login-card {{
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 28px;
+            padding: 3.5rem 2.5rem;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }}
+
+        header h1 {{
+            font-size: 2.3rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #ffffff 40%, #8892b0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+
+        header p {{
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            max-width: 320px;
+            margin: 0 auto;
+        }}
+
+        .google-btn {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: #0f141c;
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 99px;
+            padding: 14px 28px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
+            outline: none;
+            font-family: var(--font-main);
+        }}
+
+        .google-btn:hover:not(:disabled) {{
+            background: #ff4b4b;
+            border-color: #ff4b4b;
+            box-shadow: 0 4px 20px rgba(255, 75, 75, 0.4);
+            transform: translateY(-1px);
+        }}
+
+        .google-btn:active:not(:disabled) {{
+            transform: translateY(1px);
+        }}
+
+        .google-btn:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
+
+        .google-icon-wrapper {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="ambient-glow-1"></div>
+    <div class="ambient-glow-2"></div>
+
+    <div class="login-card">
+        <header>
+            <h1 style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <svg viewBox="0 0 24 24" width="38" height="38" fill="rgba(255, 75, 75, 0.15)" stroke="#ff4b4b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; filter: drop-shadow(0 0 12px rgba(255, 75, 75, 0.45));">
+                    <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                    <circle cx="12" cy="5" r="2"></circle>
+                    <path d="M12 7v4"></path>
+                    <line x1="8" y1="16" x2="8" y2="16"></line>
+                    <line x1="16" y1="16" x2="16" y2="16"></line>
+                </svg>
+                App Tag Auditor
+            </h1>
+            <p style="margin-top: 1.5rem;">Please sign in with your Google account to access the auditing dashboard.</p>
+        </header>
+
+        <button id="login-button" onclick="login()" {button_disabled_attr} class="google-btn">
+            <span class="google-icon-wrapper">
+                <svg class="google-icon" viewBox="0 0 24 24" width="16" height="16">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.14-.42-.23-.88-.23-1.37z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+            </span>
+            Sign in with Google
+        </button>
+
+        {client_id_error_html}
+    </div>
+
+    <script>
+        let tokenClient;
+        
+        function initClient() {{
+            tokenClient = google.accounts.oauth2.initTokenClient({{
+                client_id: '{client_id}',
+                scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+                callback: (tokenResponse) => {{
+                    if (tokenResponse && tokenResponse.access_token) {{
+                        const currentUrl = new URL(window.top.location.href);
+                        currentUrl.searchParams.set('google_auth_access_token', tokenResponse.access_token);
+                        window.top.location.href = currentUrl.toString();
+                    }} else {{
+                        alert("Sign-in failed. Please try again.");
+                    }}
+                }}
+            }});
+        }}
+
+        window.onload = function() {{
+            let gsiInterval = setInterval(() => {{
+                if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {{
+                    clearInterval(gsiInterval);
+                    initClient();
+                    if ('{client_id}' && '{client_id}' !== 'your-google-oauth-client-id.apps.googleusercontent.com') {{
+                        document.getElementById("login-button").disabled = false;
+                    }}
+                }}
+            }}, 100);
+        }};
+
+        function login() {{
+            if (tokenClient) {{
+                tokenClient.requestAccessToken({{ prompt: 'consent' }});
+            }}
+        }}
+    </script>
+</body>
+</html>
+"""
+    # Render full viewport login component
+    import streamlit.components.v1 as components
+    components.html(login_html, height=750)
+    st.stop()
+
 # Custom premium styling
 st.markdown("""
 <style>
@@ -115,9 +385,40 @@ html, body, [class*="css"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Main Title Section
-st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Automated Firebase Analytics APK Auditing System</div>', unsafe_allow_html=True)
+# Profile Header Section
+if st.session_state.get("authenticated") and st.session_state.get("user_profile"):
+    profile = st.session_state["user_profile"]
+    col_title, col_user = st.columns([3, 1])
+    with col_title:
+        st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sub-title">Automated Firebase Analytics APK Auditing System</div>', unsafe_allow_html=True)
+    with col_user:
+        st.markdown(
+            f"""
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 15px; margin-bottom: 5px;">
+                <img src="{profile.get('picture', '')}" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid #ff4b4b; box-shadow: 0 0 10px rgba(255, 75, 75, 0.3);" />
+                <div style="text-align: left; line-height: 1.2;">
+                    <div style="font-weight: 700; font-size: 0.95rem; color: #ffffff;">{profile.get('name', 'User')}</div>
+                    <div style="font-size: 0.8rem; color: #8892b0;">{profile.get('email', '')}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("🔌 Sign Out", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.session_state["user_profile"] = None
+            st.session_state["google_auth_token"] = None
+            # Clear all selection & auth states
+            for k in list(st.session_state.keys()):
+                if k.startswith("google_auth_token_") or k.startswith("drive_selection_"):
+                    del st.session_state[k]
+            if "apk_drive" in st.session_state:
+                del st.session_state["apk_drive"]
+            st.rerun()
+else:
+    st.markdown('<div class="gradient-title">🔍 App Tag Auditor</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Automated Firebase Analytics APK Auditing System</div>', unsafe_allow_html=True)
 
 # Initialize session state variables
 settings = get_settings()
@@ -154,70 +455,6 @@ class PipelineThread(threading.Thread):
             run_pipeline(apk_path=self.apk_path, schema_path=self.schema_path)
         except Exception as e:
             self.exception = e
-
-# Initialize global google auth token in session state
-if "google_auth_token" not in st.session_state:
-    st.session_state["google_auth_token"] = None
-
-# Synchronize global token from any existing picker or sheets auth session state
-global_token = st.session_state.get("google_auth_token")
-
-if not global_token:
-    apk_drive = st.session_state.get("drive_selection_apk")
-    if apk_drive and apk_drive.get("access_token"):
-        st.session_state["google_auth_token"] = apk_drive["access_token"]
-        global_token = apk_drive["access_token"]
-
-if not global_token:
-    sheet_auth = st.session_state.get("google_auth_token_sheet_url_auth")
-    if sheet_auth:
-        st.session_state["google_auth_token"] = sheet_auth
-        global_token = sheet_auth
-
-# Render Global Google Account Section
-st.markdown('<h3 style="color: #ff8f00; margin-top: 1.5rem;">🔐 Google Cloud Services Connection</h3>', unsafe_allow_html=True)
-if not global_token:
-    st.markdown(
-        """
-        <div style="background: rgba(255, 75, 75, 0.03); border-left: 4px solid #ff4b4b; border-radius: 8px; padding: 1.2rem; margin-bottom: 1rem;">
-            <p style="color: #8892b0; margin: 0; font-size: 0.95rem;">
-                Connect your Google Account to automatically authorize both picking APKs from Google Drive and downloading schemas from Google Sheets.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    auth_token = render_google_auth(
-        key="global_auth",
-        label="🔑 Connect Google Account",
-        height=80
-    )
-    if auth_token:
-        st.session_state["google_auth_token"] = auth_token
-        st.rerun()
-else:
-    col_status, col_btn = st.columns([5, 1])
-    with col_status:
-        st.markdown(
-            """
-            <div style="background: rgba(46, 204, 113, 0.08); border-left: 4px solid #2ecc71; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
-                <span style="color: #2ecc71; font-weight: 600; font-size: 1.05rem;">✅ Google Account Connected</span>
-                <span style="color: #8892b0; font-size: 0.9rem; margin-left: 10px;">(This session will use your authorized credentials for Drive/Sheets accesses)</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with col_btn:
-        if st.button("🔌 Disconnect", use_container_width=True):
-            st.session_state["google_auth_token"] = None
-            # Clear all selection & auth states
-            for k in list(st.session_state.keys()):
-                if k.startswith("google_auth_token_") or k.startswith("drive_selection_"):
-                    del st.session_state[k]
-            if "apk_drive" in st.session_state:
-                del st.session_state["apk_drive"]
-            st.rerun()
 
 st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.05); margin: 1.5rem 0;">', unsafe_allow_html=True)
 
