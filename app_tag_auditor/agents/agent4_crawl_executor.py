@@ -30,6 +30,170 @@ class CrawlExecutorAgent:
         self.driver = None
         self.logger = logger
 
+    def _detect_login_screen_info(self, root):
+        """
+        Scans the UI hierarchy to find:
+        - Whether this is actually a login/signup screen (smarter keyword matching)
+        - Input fields (email, phone, password, OTP, etc.)
+        - Escape/skip buttons (Skip, Continue as Guest, etc.)
+        Returns (is_login_screen, fields, escape_options)
+        """
+        # High-confidence single keywords — one is enough
+        HIGH_CONF = {"sign in", "log in", "login", "signin", "sign up", "signup",
+                     "create account", "register", "forgot password", "create an account"}
+        # Low-confidence keywords — need at least 2 different ones present
+        LOW_CONF = {"password", "email", "mobile", "phone", "otp", "verification code",
+                    "continue with", "enter your"}
+        # Escape button labels
+        ESCAPE_LABELS = {"skip", "skip login", "skip sign in", "continue as guest", "guest",
+                         "maybe later", "not now", "no thanks", "browse", "explore",
+                         "continue without", "skip for now"}
+
+        high_hits = set()
+        low_hits = set()
+        fields = []
+        escape_options = []
+
+        for node in root.iter():
+            text = (node.attrib.get('text') or '').strip()
+            desc = (node.attrib.get('content-desc') or '').strip()
+            res_id = (node.attrib.get('resource-id') or '').lower()
+            cls = (node.attrib.get('class') or '').lower()
+            combined_lower = f"{text.lower()} {desc.lower()} {res_id}"
+
+            # Check high-confidence login keywords
+            for kw in HIGH_CONF:
+                if kw in combined_lower:
+                    high_hits.add(kw)
+
+            # Check low-confidence keywords
+            for kw in LOW_CONF:
+                if kw in combined_lower:
+                    low_hits.add(kw)
+
+            # Detect input fields (EditText nodes)
+            if 'edittext' in cls:
+                label = text or desc
+                # Infer field type from hint/text/resource-id
+                combined_for_type = combined_lower
+                if any(k in combined_for_type for k in ("password", "pass")):
+                    field_type = "password"
+                elif any(k in combined_for_type for k in ("otp", "verification", "code", "pin")):
+                    field_type = "otp"
+                elif any(k in combined_for_type for k in ("phone", "mobile", "number")):
+                    field_type = "phone"
+                elif any(k in combined_for_type for k in ("email", "mail")):
+                    field_type = "email"
+                else:
+                    field_type = "text"
+                # Use hint attribute if text is empty
+                hint = (node.attrib.get('hint') or '').strip()
+                display_label = label or hint or field_type.capitalize()
+                rid = node.attrib.get('resource-id') or ''
+                fields.append({"label": display_label, "resource_id": rid, "field_type": field_type})
+
+            # Detect escape/skip buttons
+            text_lower = text.lower()
+            for esc in ESCAPE_LABELS:
+                if esc in text_lower or esc in desc.lower():
+                    rid = node.attrib.get('resource-id') or ''
+                    escape_options.append({"label": text or desc, "resource_id": rid})
+                    break
+
+        is_login = bool(high_hits) or len(low_hits) >= 2
+        return is_login, fields, escape_options
+
+    def _inject_credentials(self, fields: list, credentials: dict):
+        """Types credential values into matching input fields on screen."""
+        from appium.webdriver.common.appiumby import AppiumBy
+        from selenium.common.exceptions import NoSuchElementException
+
+        for field in fields:
+            rid = field.get("resource_id", "")
+            label = field.get("label", "")
+            value = credentials.get(rid) or credentials.get(label) or ""
+            if not value:
+                logger.warning(f"No value provided for field '{label}' ({rid}), skipping.")
+                continue
+            try:
+                if rid:
+                    el = self.driver.find_element(AppiumBy.ID, rid)
+                else:
+                    el = self._find_element_by_strategy(label, "text")
+                el.click()
+                el.clear()
+                el.send_keys(value)
+                logger.info(f"Injected value into field '{label}' ({rid})")
+                time.sleep(0.5)
+            except NoSuchElementException:
+                logger.warning(f"Could not find field '{label}' ({rid}) to inject value.")
+            except Exception as e:
+                logger.warning(f"Error injecting into field '{label}': {e}")
+
+    def _tap_submit_button(self):
+        """Tries to tap a submit/login/continue button after credential injection."""
+        from appium.webdriver.common.appiumby import AppiumBy
+        from selenium.common.exceptions import NoSuchElementException
+
+        submit_labels = ["login", "log in", "sign in", "signin", "submit",
+                         "continue", "next", "proceed", "verify"]
+        for label in submit_labels:
+            try:
+                el = self.driver.find_element(
+                    AppiumBy.ANDROID_UIAUTOMATOR,
+                    f'new UiSelector().textContains("{label}").clickable(true)'
+                )
+                if el and el.is_displayed():
+                    logger.info(f"Tapping submit button: '{label}'")
+                    el.click()
+                    time.sleep(2)
+                    return
+            except NoSuchElementException:
+                pass
+            except Exception:
+                pass
+        logger.warning("Could not find a submit button — pressing Enter as fallback.")
+        try:
+            from appium.webdriver.common.appiumby import AppiumBy
+            from selenium.webdriver.common.keys import Keys
+            self.driver.press_keycode(66)  # KEYCODE_ENTER
+        except Exception as e:
+            logger.warning(f"Enter key fallback failed: {e}")
+
+    def _tap_escape_option(self, escape_label_or_rid: str):
+        """Taps a skip/escape element by resource-id or text label."""
+        from appium.webdriver.common.appiumby import AppiumBy
+        from selenium.common.exceptions import NoSuchElementException
+
+        # Try resource-id first
+        if escape_label_or_rid and ':id/' in escape_label_or_rid:
+            try:
+                el = self.driver.find_element(AppiumBy.ID, escape_label_or_rid)
+                if el and el.is_displayed():
+                    el.click()
+                    logger.info(f"Tapped escape element by resource-id: {escape_label_or_rid}")
+                    time.sleep(1.5)
+                    return
+            except NoSuchElementException:
+                pass
+
+        # Fall back to text match
+        try:
+            el = self.driver.find_element(
+                AppiumBy.ANDROID_UIAUTOMATOR,
+                f'new UiSelector().textContains("{escape_label_or_rid}")'
+            )
+            if el and el.is_displayed():
+                el.click()
+                logger.info(f"Tapped escape element by text: {escape_label_or_rid}")
+                time.sleep(1.5)
+                return
+        except NoSuchElementException:
+            pass
+
+        logger.warning(f"Could not find escape element '{escape_label_or_rid}', pressing Back instead.")
+        self.driver.back()
+
     def _check_login_intervention(self):
         """Checks if login/signup options are visible on screen, and triggers interaction bridge if configured."""
         if not self.bridge:
@@ -39,49 +203,61 @@ class CrawlExecutorAgent:
             from core.ui_hierarchy import dump_hierarchy, parse_hierarchy
             xml_str = dump_hierarchy(self.driver)
             root = parse_hierarchy(xml_str)
-            if root is not None:
-                keywords = ["login", "log in", "signin", "sign in", "signup", "sign up", "register", "create account", "forgot password", "password"]
-                found_keyword = False
-                for node in root.iter():
-                    text = (node.attrib.get('text') or '').lower()
-                    desc = (node.attrib.get('content-desc') or '').lower()
-                    res_id = (node.attrib.get('resource-id') or '').lower()
-                    combined = f"{text} {desc} {res_id}"
-                    for kw in keywords:
-                        if kw in combined:
-                            found_keyword = True
-                            break
-                    if found_keyword:
-                        break
-                
-                if found_keyword:
-                    logger.info("🔑 Login/signup screen option detected! Pausing and waiting for user instruction...")
-                    self.bridge.screen_hierarchy = xml_str
-                    self.bridge.user_responded.clear()
-                    self.bridge.login_detected.set()
-                    
-                    # Wait for user input
-                    self.bridge.user_responded.wait()
-                    
-                    decision = self.bridge.user_decision
-                    logger.info(f"User responded with decision: {decision}")
-                    
-                    if decision == "abort":
-                        raise Exception("Audit pipeline aborted by user choice on login screen.")
-                    elif decision == "skip":
-                        logger.info("User requested to skip login screen. Attempting to navigate back...")
-                        try:
-                            self.driver.back()
-                        except Exception as back_err:
-                            logger.warning(f"Failed to go back: {back_err}")
-                    elif decision == "auto":
-                        logger.info("User requested to proceed. Continuing with standard executor flow.")
-                    
-                    self.bridge.login_detected.clear()
+            if root is None:
+                return
+
+            is_login, fields, escape_options = self._detect_login_screen_info(root)
+
+            if not is_login:
+                return
+
+            logger.info(f"🔑 Login/signup screen detected! Fields={[f['label'] for f in fields]}, Escapes={[e['label'] for e in escape_options]}")
+
+            # Populate bridge with discovered screen info
+            self.bridge.screen_hierarchy = xml_str
+            self.bridge.discovered_fields = fields
+            self.bridge.discovered_escape_options = escape_options
+            self.bridge.user_decision = None
+            self.bridge.credentials = {}
+            self.bridge.user_responded.clear()
+            self.bridge.login_detected.set()
+
+            # Wait for user to pick an action (login / signup / escape / skip / abort)
+            self.bridge.user_responded.wait()
+            decision = self.bridge.user_decision
+            logger.info(f"User responded with decision: {decision}")
+
+            self.bridge.login_detected.clear()
+
+            if decision == "abort":
+                raise Exception("Audit pipeline aborted by user choice on login screen.")
+
+            elif decision == "skip":
+                logger.info("User chose Go Back — pressing Android back button.")
+                try:
+                    self.driver.back()
+                except Exception as e:
+                    logger.warning(f"Failed to go back: {e}")
+
+            elif decision in ("login", "signup"):
+                creds = self.bridge.credentials or {}
+                logger.info(f"User chose {decision} — injecting {len(creds)} credential field(s).")
+                self._inject_credentials(fields, creds)
+                time.sleep(0.5)
+                self._tap_submit_button()
+
+            elif decision and decision.startswith("escape:"):
+                target = decision[len("escape:"):]
+                logger.info(f"User chose escape option: {target}")
+                self._tap_escape_option(target)
+
+            else:
+                logger.warning(f"Unknown decision '{decision}' — continuing without action.")
+
         except Exception as e:
             if "aborted by user" in str(e):
                 raise
-            logger.error(f"Error checking login intervention: {e}")
+            logger.error(f"Error in login intervention: {e}")
 
     def _build_driver(self):
         """Initializes the Appium WebDriver driver connection."""

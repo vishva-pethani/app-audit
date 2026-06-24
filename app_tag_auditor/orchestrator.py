@@ -49,10 +49,14 @@ class RuntimeAuditOrchestrator:
         detected_screen, source = self.screen_detector.detect(self.crawl_executor.driver) if self.crawl_executor.driver is not None else (None, "unknown")
         self.log_agent.stop_capture()
         logs = self.log_agent.get_captured_logs()
+        # Convert CapturedLog instances to dicts before constructing EventRuntimeCapture.
+        # Streamlit's module hot-reload can create a second CapturedLog class identity,
+        # causing Pydantic v2 to reject valid instances. Dicts are always accepted.
+        logs_as_dicts = [l.model_dump() if hasattr(l, 'model_dump') else dict(l) for l in logs]
         return EventRuntimeCapture(
             event_name=event.event_name,
             trigger_timestamp=trigger_timestamp,
-            captured_logs=logs,
+            captured_logs=logs_as_dicts,
             detected_screen_after=detected_screen,
             detection_source=source,
             detected_screen_immediately=detected_screen_immediately,
@@ -97,16 +101,41 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     decompiled_sources = ApkDecompiler().decompile(apk_path)
     
     if not settings.ANDROID_APP_PACKAGE:
-        manifest_path = os.path.join(os.path.dirname(decompiled_sources), "AndroidManifest.xml")
-        if not os.path.exists(manifest_path):
-            manifest_path = os.path.join(os.path.dirname(decompiled_sources), "resources", "AndroidManifest.xml")
-        if os.path.exists(manifest_path):
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                match = re.search(r'package="([^"]+)"', f.read())
-                if match:
-                    settings.ANDROID_APP_PACKAGE = match.group(1)
+        # Search all candidate locations for AndroidManifest.xml under the decompiled cache dir.
+        # decompiled_sources is typically <cache_dir>/sources; the manifest lives in <cache_dir>/resources/.
+        cache_dir = os.path.dirname(decompiled_sources)
+        candidate_manifests = [
+            os.path.join(cache_dir, "AndroidManifest.xml"),
+            os.path.join(cache_dir, "resources", "AndroidManifest.xml"),
+            os.path.join(decompiled_sources, "AndroidManifest.xml"),
+        ]
+        # Also do a recursive search under cache_dir as a last resort
+        for root, _, files in os.walk(cache_dir):
+            for fname in files:
+                if fname == "AndroidManifest.xml":
+                    candidate_manifests.append(os.path.join(root, fname))
+
+        for manifest_path in candidate_manifests:
+            if os.path.exists(manifest_path):
+                try:
+                    with open(manifest_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    match = re.search(r'package="([^"]+)"', content)
+                    if match:
+                        pkg = match.group(1)
+                        # Ignore generic Android framework manifests
+                        if pkg and not pkg.startswith("android"):
+                            settings.ANDROID_APP_PACKAGE = pkg
+                            logger.info(f"Auto-detected ANDROID_APP_PACKAGE: {pkg} (from {manifest_path})")
+                            break
+                except Exception as e:
+                    logger.warning(f"Failed to read manifest at {manifest_path}: {e}")
+
         if not settings.ANDROID_APP_PACKAGE:
-            raise ValueError("ANDROID_APP_PACKAGE is missing.")
+            raise ValueError(
+                "ANDROID_APP_PACKAGE could not be auto-detected from the APK. "
+                "Please set it manually in your .env file (e.g. ANDROID_APP_PACKAGE=com.example.app)."
+            )
             
     code_locations = CodebaseMapperAgent(decompiled_sources).run(expected_events)
     crawl_plans = CrawlPlannerAgent().run(expected_events)
@@ -129,7 +158,7 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     subprocess.run(log_agent._adb_cmd("shell", "setprop", "debug.firebase.analytics.app", settings.ANDROID_APP_PACKAGE), capture_output=True)
     subprocess.run(log_agent._adb_cmd("shell", "am", "force-stop", settings.ANDROID_APP_PACKAGE), capture_output=True)
 
-    executor = CrawlExecutorAgent(apk_path=apk_path, interaction_bridge=interaction_bridge)
+    executor = CrawlExecutorAgent(apk_path=apk_path, app_package=settings.ANDROID_APP_PACKAGE, interaction_bridge=interaction_bridge)
     screen_detector = ScreenDetector()
     orchestrator = RuntimeAuditOrchestrator(executor, log_agent, screen_detector, expected_events)
 
