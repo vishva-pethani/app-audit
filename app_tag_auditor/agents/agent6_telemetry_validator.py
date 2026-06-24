@@ -72,7 +72,7 @@ class TelemetryValidatorAgent:
         # Evaluate all matching logs to find the one that best fits the schema
         for log in matching_logs:
             expected_keys = {p.param_name for p in event.expected_params}
-            
+
             # Filter out the ignored system parameters to evaluate true extra parameters
             actual_keys = {k for k in log.raw_params.keys() if k not in self.IGNORED_SYSTEM_PARAMS}
 
@@ -92,6 +92,10 @@ class TelemetryValidatorAgent:
             passed = (len(missing_keys) == 0 and len(mismatched_keys) == 0 and len(extra_keys) == 0)
             error_score = len(missing_keys) + len(mismatched_keys) + len(extra_keys)
 
+            # Always convert log to dict so Pydantic v2 accepts it regardless of
+            # which module-reload cycle created the CapturedLog class.
+            log_dict = log.model_dump() if hasattr(log, 'model_dump') else dict(log)
+
             result = TelemetryValidationResult(
                 event_name=event.event_name,
                 screen=event.screen,
@@ -99,14 +103,14 @@ class TelemetryValidatorAgent:
                 mismatched_keys=mismatched_keys,
                 missing_keys=missing_keys,
                 extra_keys=extra_keys,
-                matched_log=log
+                matched_log=log_dict,
             )
 
-            # If we find a fully passing log, we can return it immediately
+            # If we find a fully passing log, return immediately
             if passed:
                 return result
 
-            # Otherwise, keep track of the log with the lowest error score
+            # Otherwise keep track of the best (lowest error score) result
             if error_score < best_error_score:
                 best_error_score = error_score
                 best_result = result
