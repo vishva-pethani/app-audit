@@ -62,7 +62,7 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
-html, body, [class*="css"], [data-testid="stAppViewContainer"] {
+html, body, [data-testid="stAppViewContainer"] {
      font-family: 'Outfit', sans-serif !important;
     background: var(--background-color) !important;
     background-color: var(--background-color) !important;
@@ -126,10 +126,10 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] {
 }
 
 .block-container {
-    padding-top: 0rem !important;
-    padding-bottom: 0rem !important;
-    padding-left: 0rem !important;
-    padding-right: 0rem !important;
+    padding-top: 6rem !important;
+    padding-bottom: 2rem !important;
+    padding-left: 3rem !important;
+    padding-right: 3rem !important;
 }
 
 section[data-testid="stMain"] {
@@ -145,7 +145,7 @@ div[data-testid="stVerticalBlock"] {
     z-index: 10;
     max-width: 460px;
     margin: 0 auto;
-    min-height: 100vh;
+    min-height: calc(100vh - 8rem);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -280,6 +280,15 @@ div[data-testid="stVerticalBlock"] {
 .step-card h4 {
     margin-top: 0;
     color: #ff8f00;
+}
+
+.user-profile-card {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 15px;
+    margin-bottom: 24px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -476,7 +485,7 @@ if st.session_state.get("authenticated") and st.session_state.get("user_profile"
     with col_user:
         st.markdown(
             f"""
-            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 15px; margin-bottom: 5px;">
+            <div class="user-profile-card">
                 <img src="{profile.get('picture', '')}" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid #ff4b4b; box-shadow: 0 0 10px rgba(255, 75, 75, 0.3);" />
                 <div style="text-align: left; line-height: 1.2;">
                     <div style="font-weight: 700; font-size: 0.95rem; color: #ffffff;">{profile.get('name', 'User')}</div>
