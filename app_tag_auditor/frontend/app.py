@@ -63,11 +63,13 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 html, body, [class*="css"], [data-testid="stAppViewContainer"] {
-    font-family: 'Outfit', sans-serif !important;
+     font-family: 'Outfit', sans-serif !important;
     background: var(--background-color) !important;
     background-color: var(--background-color) !important;
     color: var(--text-color) !important;
     overflow-x: hidden;
+    overflow-y: hidden !important;
+    height: 100vh !important;
 }
 
 /* Background Glowing Blobs */
@@ -123,12 +125,30 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] {
     }
 }
 
+.block-container {
+    padding-top: 0rem !important;
+    padding-bottom: 0rem !important;
+    padding-left: 0rem !important;
+    padding-right: 0rem !important;
+}
+
+section[data-testid="stMain"] {
+    padding-top: 0 !important;
+}
+
+div[data-testid="stVerticalBlock"] {
+    gap: 0 !important;
+}
 /* Main Welcome Page Wrapper */
 .welcome-wrapper {
     position: relative;
     z-index: 10;
     max-width: 460px;
-    margin: 6vh auto;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
