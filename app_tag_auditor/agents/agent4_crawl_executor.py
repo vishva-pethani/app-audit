@@ -131,12 +131,27 @@ class CrawlExecutorAgent:
                 logger.warning(f"Error injecting into field '{label}': {e}")
 
     def _tap_submit_button(self):
-        """Tries to tap a submit/login/continue button after credential injection."""
+        """
+        Tries every reasonable strategy to submit a login/signup form, in order:
+        1. Text-based clickable button matching common submit labels
+        2. Content-description based (arrow icons, forward icons, etc.)
+        3. Any clickable ImageButton or ImageView near the bottom half of screen (arrow/forward icon)
+        4. IME action button on the last focused field (Done / Go / Next)
+        5. KEYCODE_ENTER on the currently focused field
+        6. Focus-out (tap outside the field) — sometimes triggers validation + submit
+        7. KEYCODE_TAB to move focus off the last field, then KEYCODE_ENTER
+        Falls through all strategies so it never blocks.
+        """
         from appium.webdriver.common.appiumby import AppiumBy
-        from selenium.common.exceptions import NoSuchElementException
+        from selenium.common.exceptions import NoSuchElementException, WebDriverException
 
-        submit_labels = ["login", "log in", "sign in", "signin", "submit",
-                         "continue", "next", "proceed", "verify"]
+        # ── Strategy 1: Text-based clickable buttons ────────────────────────
+        submit_labels = [
+            "login", "log in", "sign in", "signin",
+            "sign up", "signup", "register", "create account",
+            "submit", "continue", "next", "proceed",
+            "verify", "send otp", "get otp", "confirm",
+        ]
         for label in submit_labels:
             try:
                 el = self.driver.find_element(
@@ -144,21 +159,115 @@ class CrawlExecutorAgent:
                     f'new UiSelector().textContains("{label}").clickable(true)'
                 )
                 if el and el.is_displayed():
-                    logger.info(f"Tapping submit button: '{label}'")
+                    logger.info(f"[Submit] Strategy 1 — tapping text button: '{label}'")
                     el.click()
                     time.sleep(2)
                     return
-            except NoSuchElementException:
+            except (NoSuchElementException, WebDriverException):
                 pass
-            except Exception:
+
+        # ── Strategy 2: Content-description arrow/forward icons ─────────────
+        arrow_descs = [
+            "next", "continue", "forward", "arrow", "go", "proceed",
+            "submit", "done", "→", "›",
+        ]
+        for desc in arrow_descs:
+            try:
+                el = self.driver.find_element(
+                    AppiumBy.ANDROID_UIAUTOMATOR,
+                    f'new UiSelector().descriptionContains("{desc}").clickable(true)'
+                )
+                if el and el.is_displayed():
+                    logger.info(f"[Submit] Strategy 2 — tapping by content-desc: '{desc}'")
+                    el.click()
+                    time.sleep(2)
+                    return
+            except (NoSuchElementException, WebDriverException):
                 pass
-        logger.warning("Could not find a submit button — pressing Enter as fallback.")
+
+        # ── Strategy 3: Clickable ImageButton / ImageView in lower half ──────
         try:
-            from appium.webdriver.common.appiumby import AppiumBy
-            from selenium.webdriver.common.keys import Keys
-            self.driver.press_keycode(66)  # KEYCODE_ENTER
+            size = self.driver.get_window_size()
+            mid_y = size['height'] // 2
+            # Find all clickable image buttons; prefer ones in the lower half
+            candidates = self.driver.find_elements(
+                AppiumBy.ANDROID_UIAUTOMATOR,
+                'new UiSelector().clickable(true).className("android.widget.ImageButton")'
+            )
+            candidates += self.driver.find_elements(
+                AppiumBy.ANDROID_UIAUTOMATOR,
+                'new UiSelector().clickable(true).className("android.widget.ImageView")'
+            )
+            lower_candidates = [
+                el for el in candidates
+                if el.is_displayed() and el.location.get('y', 0) > mid_y
+            ]
+            if lower_candidates:
+                # Pick the rightmost one (typical for arrow/forward button placement)
+                best = max(lower_candidates, key=lambda e: e.location.get('x', 0))
+                logger.info(f"[Submit] Strategy 3 — tapping ImageButton/View at {best.location}")
+                best.click()
+                time.sleep(2)
+                return
         except Exception as e:
-            logger.warning(f"Enter key fallback failed: {e}")
+            logger.debug(f"[Submit] Strategy 3 failed: {e}")
+
+        # ── Strategy 4: IME action button (Done / Go / Next on keyboard) ─────
+        try:
+            # KEYCODE_EDITOR_ACTION fires the IME action configured on the field
+            self.driver.press_keycode(160)  # KEYCODE_EDITOR_ACTION
+            logger.info("[Submit] Strategy 4 — pressed KEYCODE_EDITOR_ACTION (IME action)")
+            time.sleep(1.5)
+            # Check if we moved off the login screen (a proxy for success)
+            from core.ui_hierarchy import dump_hierarchy, parse_hierarchy
+            xml_str = dump_hierarchy(self.driver)
+            root = parse_hierarchy(xml_str)
+            if root is not None:
+                still_login, _, _ = self._detect_login_screen_info(root)
+                if not still_login:
+                    logger.info("[Submit] Strategy 4 — IME action appears to have worked.")
+                    return
+        except Exception as e:
+            logger.debug(f"[Submit] Strategy 4 failed: {e}")
+
+        # ── Strategy 5: KEYCODE_ENTER on focused field ───────────────────────
+        try:
+            self.driver.press_keycode(66)  # KEYCODE_ENTER
+            logger.info("[Submit] Strategy 5 — pressed KEYCODE_ENTER")
+            time.sleep(1.5)
+            from core.ui_hierarchy import dump_hierarchy, parse_hierarchy
+            xml_str = dump_hierarchy(self.driver)
+            root = parse_hierarchy(xml_str)
+            if root is not None:
+                still_login, _, _ = self._detect_login_screen_info(root)
+                if not still_login:
+                    logger.info("[Submit] Strategy 5 — Enter appears to have worked.")
+                    return
+        except Exception as e:
+            logger.debug(f"[Submit] Strategy 5 failed: {e}")
+
+        # ── Strategy 6: Focus-out — tap centre of screen outside any field ───
+        try:
+            size = self.driver.get_window_size()
+            tap_x = size['width'] // 2
+            tap_y = int(size['height'] * 0.85)  # near bottom, outside typical field area
+            self.driver.tap([(tap_x, tap_y)])
+            logger.info(f"[Submit] Strategy 6 — focus-out tap at ({tap_x}, {tap_y})")
+            time.sleep(1)
+        except Exception as e:
+            logger.debug(f"[Submit] Strategy 6 failed: {e}")
+
+        # ── Strategy 7: TAB then ENTER ───────────────────────────────────────
+        try:
+            self.driver.press_keycode(61)   # KEYCODE_TAB
+            time.sleep(0.5)
+            self.driver.press_keycode(66)   # KEYCODE_ENTER
+            logger.info("[Submit] Strategy 7 — TAB + ENTER")
+            time.sleep(1.5)
+        except Exception as e:
+            logger.debug(f"[Submit] Strategy 7 failed: {e}")
+
+        logger.warning("[Submit] All submit strategies exhausted — continuing without confirmed submission.")
 
     def _tap_escape_option(self, escape_label_or_rid: str):
         """Taps a skip/escape element by resource-id or text label."""
@@ -199,6 +308,12 @@ class CrawlExecutorAgent:
         if not self.bridge:
             return
 
+        # If login is already in progress (credentials were submitted, waiting for
+        # OTP/next step), don't re-trigger the intervention popup for sub-screens.
+        if getattr(self.bridge, 'login_in_progress', False):
+            logger.debug("Login already in progress — skipping re-intervention on sub-screen.")
+            return
+
         try:
             from core.ui_hierarchy import dump_hierarchy, parse_hierarchy
             xml_str = dump_hierarchy(self.driver)
@@ -234,6 +349,7 @@ class CrawlExecutorAgent:
 
             elif decision == "skip":
                 logger.info("User chose Go Back — pressing Android back button.")
+                self.bridge.login_in_progress = False
                 try:
                     self.driver.back()
                 except Exception as e:
@@ -242,6 +358,9 @@ class CrawlExecutorAgent:
             elif decision in ("login", "signup"):
                 creds = self.bridge.credentials or {}
                 logger.info(f"User chose {decision} — injecting {len(creds)} credential field(s).")
+                # Mark login in progress BEFORE submit so OTP/next screens aren't
+                # re-intercepted as new login prompts.
+                self.bridge.login_in_progress = True
                 self._inject_credentials(fields, creds)
                 time.sleep(0.5)
                 self._tap_submit_button()
@@ -249,6 +368,7 @@ class CrawlExecutorAgent:
             elif decision and decision.startswith("escape:"):
                 target = decision[len("escape:"):]
                 logger.info(f"User chose escape option: {target}")
+                self.bridge.login_in_progress = False
                 self._tap_escape_option(target)
 
             else:
@@ -284,11 +404,23 @@ class CrawlExecutorAgent:
         from selenium.common.exceptions import NoSuchElementException
 
         logger.info("Ensuring app is on the main screen...")
+
+        # If login is in progress, the app is mid-auth flow (OTP screen, etc.).
+        # Don't press Back — just wait for the user to complete it naturally.
+        if self.bridge and getattr(self.bridge, 'login_in_progress', False):
+            logger.info("Login in progress — skipping back-button loop in _ensure_on_main_screen.")
+            return
         
         for attempt in range(4):
             # First, check and dismiss any popups
             self._dismiss_popups()
             self._check_login_intervention()
+
+            # If login intervention was just triggered and credentials submitted,
+            # the flag is now set — stop pressing back.
+            if self.bridge and getattr(self.bridge, 'login_in_progress', False):
+                logger.info("Login started during ensure-main-screen — stopping back-button loop.")
+                return
             
             # Check if our app package is in the foreground
             try:
@@ -306,6 +438,9 @@ class CrawlExecutorAgent:
                 tab = self.driver.find_element(AppiumBy.ACCESSIBILITY_ID, "My RE")
                 if tab and tab.is_displayed():
                     logger.info("Main screen tab 'My RE' is visible.")
+                    # Main screen reached — login flow is complete
+                    if self.bridge:
+                        self.bridge.login_in_progress = False
                     return
             except NoSuchElementException:
                 pass
@@ -315,6 +450,8 @@ class CrawlExecutorAgent:
                 tab = self.driver.find_element(AppiumBy.XPATH, '//*[@text="My RE"]')
                 if tab and tab.is_displayed():
                     logger.info("Main screen tab 'My RE' (by text) is visible.")
+                    if self.bridge:
+                        self.bridge.login_in_progress = False
                     return
             except NoSuchElementException:
                 pass

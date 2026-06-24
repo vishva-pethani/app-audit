@@ -707,6 +707,9 @@ class InteractionBridge:
         self.discovered_escape_options: list = []
         # Credentials entered by user: dict mapping resource_id -> value
         self.credentials: dict = {}
+        # Set to True after user submits credentials so mid-login screens
+        # (OTP, verification, etc.) are not treated as new login prompts
+        self.login_in_progress: bool = False
 
 class PipelineThread(threading.Thread):
     def __init__(self, apk_path, schema_path, interaction_bridge=None):
