@@ -308,12 +308,6 @@ class CrawlExecutorAgent:
         if not self.bridge:
             return
 
-        # If login is already in progress (credentials were submitted, waiting for
-        # OTP/next step), don't re-trigger the intervention popup for sub-screens.
-        if getattr(self.bridge, 'login_in_progress', False):
-            logger.debug("Login already in progress — skipping re-intervention on sub-screen.")
-            return
-
         try:
             from core.ui_hierarchy import dump_hierarchy, parse_hierarchy
             xml_str = dump_hierarchy(self.driver)
@@ -326,18 +320,61 @@ class CrawlExecutorAgent:
             if not is_login:
                 return
 
+            # ── Mid-login mode: credentials already submitted, now on a follow-up
+            #    screen (OTP, verification, etc.). Skip the choice popup — just
+            #    detect new fields, ask user to fill them, inject and submit.
+            if getattr(self.bridge, 'login_in_progress', False):
+                if not fields:
+                    logger.debug("Login in progress, sub-screen has no new input fields — skipping.")
+                    return
+
+                logger.info(f"🔢 Mid-login sub-screen detected (OTP/verification). Fields={[f['label'] for f in fields]}")
+
+                # Reuse bridge to ask for field values — signal with a special decision
+                self.bridge.screen_hierarchy = xml_str
+                self.bridge.discovered_fields = fields
+                self.bridge.discovered_escape_options = []
+                self.bridge.user_decision = None
+                self.bridge.credentials = {}
+                self.bridge.user_responded.clear()
+                # Set a flag so the UI knows this is a mid-login field-fill (not the initial choice)
+                self.bridge.mid_login_fields = True
+                self.bridge.login_detected.set()
+
+                self.bridge.user_responded.wait()
+                decision = self.bridge.user_decision
+                self.bridge.login_detected.clear()
+                self.bridge.mid_login_fields = False
+
+                if decision == "abort":
+                    raise Exception("Audit pipeline aborted by user on OTP/verification screen.")
+                elif decision in ("login", "signup", "submit_fields"):
+                    creds = self.bridge.credentials or {}
+                    logger.info(f"Injecting {len(creds)} field value(s) on sub-screen.")
+                    self._inject_credentials(fields, creds)
+                    time.sleep(0.5)
+                    self._tap_submit_button()
+                elif decision == "skip":
+                    logger.info("User chose to skip OTP/sub-screen — pressing Back.")
+                    self.bridge.login_in_progress = False
+                    try:
+                        self.driver.back()
+                    except Exception as e:
+                        logger.warning(f"Failed to go back: {e}")
+                return
+
+            # ── First encounter: show the full choice popup ──────────────────
             logger.info(f"🔑 Login/signup screen detected! Fields={[f['label'] for f in fields]}, Escapes={[e['label'] for e in escape_options]}")
 
-            # Populate bridge with discovered screen info
             self.bridge.screen_hierarchy = xml_str
             self.bridge.discovered_fields = fields
             self.bridge.discovered_escape_options = escape_options
+            self.bridge.mid_login_fields = False
             self.bridge.user_decision = None
             self.bridge.credentials = {}
             self.bridge.user_responded.clear()
             self.bridge.login_detected.set()
 
-            # Wait for user to pick an action (login / signup / escape / skip / abort)
             self.bridge.user_responded.wait()
             decision = self.bridge.user_decision
             logger.info(f"User responded with decision: {decision}")
@@ -358,8 +395,6 @@ class CrawlExecutorAgent:
             elif decision in ("login", "signup"):
                 creds = self.bridge.credentials or {}
                 logger.info(f"User chose {decision} — injecting {len(creds)} credential field(s).")
-                # Mark login in progress BEFORE submit so OTP/next screens aren't
-                # re-intercepted as new login prompts.
                 self.bridge.login_in_progress = True
                 self._inject_credentials(fields, creds)
                 time.sleep(0.5)

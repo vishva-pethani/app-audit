@@ -568,78 +568,23 @@ if st.session_state.get("pipeline_running"):
     
     # Check for login intervention
     if bridge and bridge.login_detected.is_set():
-        st.markdown("""
-        <div style="background: rgba(255, 143, 0, 0.05); border: 2px solid #ff8f00; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; box-shadow: 0 0 20px rgba(255, 143, 0, 0.15);">
-            <h3 style="color: #ff8f00; margin-top: 0;">🔑 Login/Signup Screen Detected!</h3>
-            <p style="color: #d8c2e6; font-size: 0.95rem; line-height: 1.5;">
-                The crawler is paused at a login or signup screen. Choose how to proceed:
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        is_mid_login = getattr(bridge, 'mid_login_fields', False)
 
-        escape_options = bridge.discovered_escape_options or []
-
-        # ── Phase 1: user picks what to do ──────────────────────────────────
-        if not st.session_state.get("hitl_phase2_active"):
-
-            # Login / Signup buttons
-            col_l, col_s = st.columns(2)
-            with col_l:
-                if st.button("🔐 Login", use_container_width=True, type="primary", key="btn_hitl_login"):
-                    st.session_state["hitl_phase2_active"] = True
-                    st.session_state["hitl_phase2_mode"] = "login"
-                    st.rerun()
-            with col_s:
-                if st.button("📝 Sign Up", use_container_width=True, key="btn_hitl_signup"):
-                    st.session_state["hitl_phase2_active"] = True
-                    st.session_state["hitl_phase2_mode"] = "signup"
-                    st.rerun()
-
-            # Escape / skip options found on screen
-            if escape_options:
-                st.markdown("**Or tap an escape option found on the screen:**")
-                for opt in escape_options:
-                    label = opt.get("label", "Unknown")
-                    rid = opt.get("resource_id", "")
-                    btn_key = f"btn_escape_{rid or label}"
-                    if st.button(f"↩️ {label}", use_container_width=True, key=btn_key):
-                        bridge.user_decision = f"escape:{rid or label}"
-                        bridge.user_responded.set()
-                        st.session_state.pop("hitl_phase2_active", None)
-                        st.session_state.pop("hitl_phase2_mode", None)
-                        st.rerun()
-
-            # Go Back / Abort
-            col_back, col_abort = st.columns(2)
-            with col_back:
-                if st.button("⬅️ Go Back", use_container_width=True, key="btn_hitl_skip"):
-                    bridge.user_decision = "skip"
-                    bridge.user_responded.set()
-                    st.session_state.pop("hitl_phase2_active", None)
-                    st.session_state.pop("hitl_phase2_mode", None)
-                    st.rerun()
-            with col_abort:
-                if st.button("🛑 Abort Audit", use_container_width=True, key="btn_hitl_abort"):
-                    bridge.user_decision = "abort"
-                    bridge.user_responded.set()
-                    st.session_state.pop("hitl_phase2_active", None)
-                    st.session_state.pop("hitl_phase2_mode", None)
-                    st.rerun()
-
-        # ── Phase 2: collect credential values ──────────────────────────────
-        else:
-            mode = st.session_state.get("hitl_phase2_mode", "login")
-            mode_label = "Login" if mode == "login" else "Sign Up"
+        if is_mid_login:
+            # ── Mid-login sub-screen (OTP / verification / next step) ───────
             fields = bridge.discovered_fields or []
+            field_labels = ", ".join(f.get("label", f.get("field_type", "Field")) for f in fields) or "required fields"
+            st.markdown(f"""
+            <div style="background: rgba(100, 100, 255, 0.05); border: 2px solid #7f7fff; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; box-shadow: 0 0 20px rgba(127, 127, 255, 0.15);">
+                <h3 style="color: #a0a0ff; margin-top: 0;">📲 Verification Step Detected</h3>
+                <p style="color: #d8c2e6; font-size: 0.95rem; line-height: 1.5;">
+                    The app has moved to the next login step and needs: <strong>{field_labels}</strong>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
-            st.markdown(f"**Enter your {mode_label} credentials:**")
-
-            # If no fields were auto-discovered, show generic email + password
             if not fields:
-                fields = [
-                    {"label": "Email / Phone", "resource_id": "_fallback_email", "field_type": "email"},
-                    {"label": "Password", "resource_id": "_fallback_password", "field_type": "password"},
-                ]
+                fields = [{"label": "OTP / Code", "resource_id": "_fallback_otp", "field_type": "otp"}]
 
             cred_values = {}
             for field in fields:
@@ -650,24 +595,126 @@ if st.session_state.get("pipeline_running"):
                 val = st.text_input(
                     label,
                     type="password" if is_password else "default",
-                    key=f"cred_input_{rid}"
+                    key=f"mid_cred_input_{rid}"
                 )
                 cred_values[rid] = val
 
-            col_sub, col_cancel = st.columns(2)
+            col_sub, col_skip, col_abort = st.columns(3)
             with col_sub:
-                if st.button(f"✅ Submit & {mode_label}", use_container_width=True, type="primary", key="btn_cred_submit"):
-                    bridge.user_decision = mode  # 'login' or 'signup'
+                if st.button("✅ Submit", use_container_width=True, type="primary", key="btn_mid_submit"):
+                    bridge.user_decision = "submit_fields"
                     bridge.credentials = cred_values
                     bridge.user_responded.set()
-                    st.session_state.pop("hitl_phase2_active", None)
-                    st.session_state.pop("hitl_phase2_mode", None)
                     st.rerun()
-            with col_cancel:
-                if st.button("← Back", use_container_width=True, key="btn_cred_back"):
-                    st.session_state.pop("hitl_phase2_active", None)
-                    st.session_state.pop("hitl_phase2_mode", None)
+            with col_skip:
+                if st.button("⬅️ Skip Step", use_container_width=True, key="btn_mid_skip"):
+                    bridge.user_decision = "skip"
+                    bridge.user_responded.set()
                     st.rerun()
+            with col_abort:
+                if st.button("🛑 Abort", use_container_width=True, key="btn_mid_abort"):
+                    bridge.user_decision = "abort"
+                    bridge.user_responded.set()
+                    st.rerun()
+
+        else:
+            # ── First encounter: full choice popup ───────────────────────────
+            st.markdown("""
+            <div style="background: rgba(255, 143, 0, 0.05); border: 2px solid #ff8f00; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; box-shadow: 0 0 20px rgba(255, 143, 0, 0.15);">
+                <h3 style="color: #ff8f00; margin-top: 0;">🔑 Login/Signup Screen Detected!</h3>
+                <p style="color: #d8c2e6; font-size: 0.95rem; line-height: 1.5;">
+                    The crawler is paused at a login or signup screen. Choose how to proceed:
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            escape_options = bridge.discovered_escape_options or []
+
+            # ── Phase 1: user picks what to do ───────────────────────────────
+            if not st.session_state.get("hitl_phase2_active"):
+
+                col_l, col_s = st.columns(2)
+                with col_l:
+                    if st.button("🔐 Login", use_container_width=True, type="primary", key="btn_hitl_login"):
+                        st.session_state["hitl_phase2_active"] = True
+                        st.session_state["hitl_phase2_mode"] = "login"
+                        st.rerun()
+                with col_s:
+                    if st.button("📝 Sign Up", use_container_width=True, key="btn_hitl_signup"):
+                        st.session_state["hitl_phase2_active"] = True
+                        st.session_state["hitl_phase2_mode"] = "signup"
+                        st.rerun()
+
+                if escape_options:
+                    st.markdown("**Or tap an escape option found on the screen:**")
+                    for opt in escape_options:
+                        label = opt.get("label", "Unknown")
+                        rid = opt.get("resource_id", "")
+                        btn_key = f"btn_escape_{rid or label}"
+                        if st.button(f"↩️ {label}", use_container_width=True, key=btn_key):
+                            bridge.user_decision = f"escape:{rid or label}"
+                            bridge.user_responded.set()
+                            st.session_state.pop("hitl_phase2_active", None)
+                            st.session_state.pop("hitl_phase2_mode", None)
+                            st.rerun()
+
+                col_back, col_abort = st.columns(2)
+                with col_back:
+                    if st.button("⬅️ Go Back", use_container_width=True, key="btn_hitl_skip"):
+                        bridge.user_decision = "skip"
+                        bridge.user_responded.set()
+                        st.session_state.pop("hitl_phase2_active", None)
+                        st.session_state.pop("hitl_phase2_mode", None)
+                        st.rerun()
+                with col_abort:
+                    if st.button("🛑 Abort Audit", use_container_width=True, key="btn_hitl_abort"):
+                        bridge.user_decision = "abort"
+                        bridge.user_responded.set()
+                        st.session_state.pop("hitl_phase2_active", None)
+                        st.session_state.pop("hitl_phase2_mode", None)
+                        st.rerun()
+
+            # ── Phase 2: credential form ──────────────────────────────────────
+            else:
+                mode = st.session_state.get("hitl_phase2_mode", "login")
+                mode_label = "Login" if mode == "login" else "Sign Up"
+                fields = bridge.discovered_fields or []
+
+                st.markdown(f"**Enter your {mode_label} credentials:**")
+
+                if not fields:
+                    fields = [
+                        {"label": "Email / Phone", "resource_id": "_fallback_email", "field_type": "email"},
+                        {"label": "Password", "resource_id": "_fallback_password", "field_type": "password"},
+                    ]
+
+                cred_values = {}
+                for field in fields:
+                    label = field.get("label") or field.get("field_type", "Field")
+                    rid = field.get("resource_id", label)
+                    ftype = field.get("field_type", "text")
+                    is_password = "password" in ftype.lower() or "password" in label.lower()
+                    val = st.text_input(
+                        label,
+                        type="password" if is_password else "default",
+                        key=f"cred_input_{rid}"
+                    )
+                    cred_values[rid] = val
+
+                col_sub, col_cancel = st.columns(2)
+                with col_sub:
+                    if st.button(f"✅ Submit & {mode_label}", use_container_width=True, type="primary", key="btn_cred_submit"):
+                        bridge.user_decision = mode
+                        bridge.credentials = cred_values
+                        bridge.user_responded.set()
+                        st.session_state.pop("hitl_phase2_active", None)
+                        st.session_state.pop("hitl_phase2_mode", None)
+                        st.rerun()
+                with col_cancel:
+                    if st.button("← Back", use_container_width=True, key="btn_cred_back"):
+                        st.session_state.pop("hitl_phase2_active", None)
+                        st.session_state.pop("hitl_phase2_mode", None)
+                        st.rerun()
     
     # Render logs
     st.markdown('<h4 style="color: #ff8f00;">📺 Console Output</h4>', unsafe_allow_html=True)
@@ -710,6 +757,8 @@ class InteractionBridge:
         # Set to True after user submits credentials so mid-login screens
         # (OTP, verification, etc.) are not treated as new login prompts
         self.login_in_progress: bool = False
+        # Set to True when a mid-login sub-screen (OTP etc.) needs field values
+        self.mid_login_fields: bool = False
 
 class PipelineThread(threading.Thread):
     def __init__(self, apk_path, schema_path, interaction_bridge=None):
