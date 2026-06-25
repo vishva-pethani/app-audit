@@ -23,7 +23,9 @@ app_tag_auditor/credentials.json
 # Outputs / temp (will be bind-mounted at runtime)
 output/
 tmp/
+app_tag_auditor/tmp/
 logs/
+app_tag_auditor/logs/
 *.log
 
 # Local binaries
