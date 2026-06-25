@@ -32,6 +32,7 @@ services:
     volumes:
       # Config
       - ./app_tag_auditor/.env:/app/app_tag_auditor/.env:ro
+      - ./app_tag_auditor/.env:/app/.env:ro
       # Persist generated output reports on the host
       - ./output:/app/output
       # Persist decompiled APK cache for faster re-runs
