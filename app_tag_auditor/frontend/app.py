@@ -372,7 +372,7 @@ if "code" in query_params:
                 "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
                 "code": code,
                 "grant_type": "authorization_code",
-                "redirect_uri": "http://localhost:8501"
+                "redirect_uri": settings.GOOGLE_OAUTH_REDIRECT_URI
             },
             timeout=10
         )
@@ -421,7 +421,7 @@ if not st.session_state["authenticated"]:
 
     # Construct the Authorization URL
     import urllib.parse
-    redirect_uri = "http://localhost:8501"
+    redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI
     scopes = "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets"
     encoded_scopes = urllib.parse.quote(scopes)
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={client_id}&redirect_uri={urllib.parse.quote(redirect_uri)}&response_type=code&scope={encoded_scopes}&access_type=offline&prompt=consent"
