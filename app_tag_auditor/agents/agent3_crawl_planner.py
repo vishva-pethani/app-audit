@@ -137,9 +137,14 @@ class CrawlPlannerAgent:
             if captured:
                 return (captured, "text")
 
-        # 3. Warning/fallback: use event_name
-        logger.warning(f"Low-confidence fallback tap selector for '{event.event_name}'")
-        return (event.event_name, "content_desc")
+        # 3. Warning/fallback: use event_name only if it's non-empty and meaningful
+        if event.event_name and event.event_name.strip():
+            logger.warning(f"Low-confidence fallback tap selector for '{event.event_name}'")
+            return (event.event_name, "content_desc")
+
+        # 4. No usable selector found — return empty marker so build_plan can skip the tap
+        logger.warning(f"No tap selector could be derived for event '{event.event_name}' — step will be skipped")
+        return ("", "text")
 
     def build_plan(self, event: ExpectedEvent, current_screen: str = "home") -> CrawlPlan:
         """Constructs a complete CrawlPlan for an expected event."""
@@ -148,13 +153,17 @@ class CrawlPlannerAgent:
         
         if not self._is_passive_event(event.user_action):
             target_selector, strategy = self._extract_tap_target(event)
-            steps.append(CrawlStep(
-                action_type="tap",
-                target_selector=target_selector,
-                value=None,
-                step_order=len(steps),
-                selector_strategy=strategy
-            ))
+            # Only add the tap step if a usable selector was found
+            if target_selector and target_selector.strip():
+                steps.append(CrawlStep(
+                    action_type="tap",
+                    target_selector=target_selector,
+                    value=None,
+                    step_order=len(steps),
+                    selector_strategy=strategy
+                ))
+            else:
+                logger.warning(f"Skipping tap step for event '{event.event_name}' — no usable selector derived.")
 
         return CrawlPlan(
             event_name=event.event_name,

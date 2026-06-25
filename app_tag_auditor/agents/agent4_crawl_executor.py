@@ -473,7 +473,11 @@ class CrawlExecutorAgent:
         self._ensure_on_main_screen()
 
     def _ensure_on_main_screen(self):
-        """Checks if the main navigation tabs are visible, and presses back if they aren't."""
+        """
+        Ensures the target app is in the foreground and past any splash screen.
+        Uses package-foreground check instead of app-specific tab names so this
+        works across any APK, not just Royal Enfield.
+        """
         from appium.webdriver.common.appiumby import AppiumBy
         from selenium.common.exceptions import NoSuchElementException
 
@@ -484,9 +488,8 @@ class CrawlExecutorAgent:
         if self.bridge and getattr(self.bridge, 'login_in_progress', False):
             logger.info("Login in progress — skipping back-button loop in _ensure_on_main_screen.")
             return
-        
+
         for attempt in range(4):
-            # First, check and dismiss any popups
             self._dismiss_popups()
             self._check_login_intervention()
 
@@ -495,52 +498,33 @@ class CrawlExecutorAgent:
             if self.bridge and getattr(self.bridge, 'login_in_progress', False):
                 logger.info("Login started during ensure-main-screen — stopping back-button loop.")
                 return
-            
-            # Check if our app package is in the foreground
+
+            # Primary check: is our app package in the foreground?
             try:
                 curr_pkg = self.driver.current_package
-                if curr_pkg and curr_pkg != self.app_package:
-                    logger.info(f"App package {self.app_package} is not in foreground (currently {curr_pkg}). Relaunching...")
+                if curr_pkg and curr_pkg == self.app_package:
+                    # App is in foreground — check we're not still on splash
+                    try:
+                        curr_act = self.driver.current_activity
+                        if curr_act and any(s in curr_act for s in ("Splash", "splash", "Loading", "loading", "Intro", "intro")):
+                            logger.info(f"Still on splash/loading screen ({curr_act}). Waiting 3s...")
+                            time.sleep(3)
+                            continue
+                    except Exception:
+                        pass
+                    logger.info(f"App package '{self.app_package}' is in foreground — proceeding.")
+                    if self.bridge:
+                        self.bridge.login_in_progress = False
+                    return
+                elif curr_pkg and curr_pkg != self.app_package:
+                    logger.info(f"App not in foreground (currently '{curr_pkg}'). Relaunching...")
                     self.driver.activate_app(self.app_package)
                     time.sleep(4)
                     continue
             except Exception as e:
                 logger.warning(f"Could not check current package: {e}")
-            
-            try:
-                # Use a zero-wait find to check if 'My RE' tab is visible
-                tab = self.driver.find_element(AppiumBy.ACCESSIBILITY_ID, "My RE")
-                if tab and tab.is_displayed():
-                    logger.info("Main screen tab 'My RE' is visible.")
-                    # Main screen reached — login flow is complete
-                    if self.bridge:
-                        self.bridge.login_in_progress = False
-                    return
-            except NoSuchElementException:
-                pass
 
-            try:
-                # Also check text "My RE"
-                tab = self.driver.find_element(AppiumBy.XPATH, '//*[@text="My RE"]')
-                if tab and tab.is_displayed():
-                    logger.info("Main screen tab 'My RE' (by text) is visible.")
-                    if self.bridge:
-                        self.bridge.login_in_progress = False
-                    return
-            except NoSuchElementException:
-                pass
-
-            # Check if we are still on the splash screen activity
-            try:
-                curr_act = self.driver.current_activity
-                if curr_act and "SplashScreenActivity" in curr_act:
-                    logger.info(f"Still on splash screen ({curr_act}). Waiting 3s...")
-                    time.sleep(3)
-                    continue
-            except Exception as e:
-                logger.warning(f"Could not check current activity: {e}")
-
-            logger.info(f"Main screen not detected (attempt {attempt + 1}/4). Pressing back button...")
+            logger.info(f"App not confirmed in foreground (attempt {attempt + 1}/4). Pressing back...")
             try:
                 self.driver.back()
                 time.sleep(2)
@@ -585,6 +569,10 @@ class CrawlExecutorAgent:
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+        # Guard: never pass an empty selector to Appium — it raises an unhelpful error
+        if not target_selector or not target_selector.strip():
+            raise NoSuchElementException("Empty selector provided — step skipped.")
 
         # Use a shorter wait first (e.g. 5 seconds) to allow fast fallback if scroll is needed
         wait = WebDriverWait(self.driver, 5)
