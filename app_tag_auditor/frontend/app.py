@@ -587,7 +587,7 @@ if st.session_state.get("pipeline_running"):
                 fields = [{"label": "OTP / Code", "resource_id": "_fallback_otp", "field_type": "otp"}]
 
             cred_values = {}
-            for field in fields:
+            for i, field in enumerate(fields):
                 label = field.get("label") or field.get("field_type", "Field")
                 rid = field.get("resource_id", label)
                 ftype = field.get("field_type", "text")
@@ -595,7 +595,7 @@ if st.session_state.get("pipeline_running"):
                 val = st.text_input(
                     label,
                     type="password" if is_password else "default",
-                    key=f"mid_cred_input_{rid}"
+                    key=f"mid_cred_input_{i}_{rid}"
                 )
                 cred_values[rid] = val
 
@@ -689,15 +689,17 @@ if st.session_state.get("pipeline_running"):
                     ]
 
                 cred_values = {}
-                for field in fields:
+                for i, field in enumerate(fields):
                     label = field.get("label") or field.get("field_type", "Field")
                     rid = field.get("resource_id", label)
                     ftype = field.get("field_type", "text")
                     is_password = "password" in ftype.lower() or "password" in label.lower()
+                    # Include index in key to prevent duplicates when resource_id
+                    # is empty or identical across multiple fields.
                     val = st.text_input(
                         label,
                         type="password" if is_password else "default",
-                        key=f"cred_input_{rid}"
+                        key=f"cred_input_{i}_{rid}"
                     )
                     cred_values[rid] = val
 
