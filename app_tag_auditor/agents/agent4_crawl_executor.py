@@ -460,6 +460,13 @@ class CrawlExecutorAgent:
         options.no_reset = True
         options.auto_grant_permissions = True
 
+        # Increase UiAutomator2 server launch and install timeouts.
+        # Default 30s is too short for large APKs or slower devices/emulators.
+        options.uiautomator2_server_launch_timeout = 90000   # ms — server start
+        options.uiautomator2_server_install_timeout = 90000  # ms — APK install
+        options.adb_exec_timeout = 60000                     # ms — individual adb calls
+        options.new_command_timeout = 300                    # s  — idle session timeout
+
         self.driver = webdriver.Remote(self.appium_server_url, options=options)
         logger.info("Appium driver successfully created and connected. Waiting 8s for splash screen to complete...")
         time.sleep(8)
