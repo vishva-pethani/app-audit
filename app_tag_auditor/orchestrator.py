@@ -44,7 +44,7 @@ class RuntimeAuditOrchestrator:
         detected_screen_immediately, detection_source_immediate = (
             self.screen_detector.detect(self.crawl_executor.driver)
             if session_alive
-            else (None, "session_dead")
+            else (None, "unknown")
         )
         # best-effort: timestamp right after the plan's final step completes (approximate true device-side firing moment)
         trigger_timestamp = datetime.now().isoformat()
@@ -53,7 +53,7 @@ class RuntimeAuditOrchestrator:
         detected_screen, source = (
             self.screen_detector.detect(self.crawl_executor.driver)
             if session_alive
-            else (None, "session_dead")
+            else (None, "unknown")
         )
         self.log_agent.stop_capture()
         logs = self.log_agent.get_captured_logs()
