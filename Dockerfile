@@ -80,8 +80,6 @@ RUN chmod +x /entrypoint.sh
 
 # Streamlit port
 EXPOSE 8501
-# Appium port
-EXPOSE 4723
 
 ENV PYTHONUNBUFFERED=1
 ENV JADX_PATH=/usr/local/bin/jadx
