@@ -47,6 +47,128 @@ class CrawlPlannerAgent:
             logger.warning(f"Failed to parse navigation map from {path}: {e}. Empty map assumed.")
             return {}
 
+    # Keyword groups that map normalized screen-name fragments to common UI labels.
+    # Used as a fallback when the screen is not in navigation_map.json.
+    # Each entry: (set of screen-name keywords to match, list of UI tap candidates)
+    # The first candidate that exists on screen will be tapped.
+    _SCREEN_KEYWORD_NAV: list[tuple[set, list[dict]]] = [
+        (
+            {"account", "accounts", "login", "signin", "signup", "auth", "profile", "myaccount"},
+            [
+                {"target_selector": "Account", "selector_strategy": "text"},
+                {"target_selector": "Accounts", "selector_strategy": "text"},
+                {"target_selector": "My Account", "selector_strategy": "text"},
+                {"target_selector": "Profile", "selector_strategy": "text"},
+                {"target_selector": "Login", "selector_strategy": "text"},
+                {"target_selector": "Sign In", "selector_strategy": "text"},
+                {"target_selector": "Sign Up", "selector_strategy": "text"},
+                {"target_selector": "account", "selector_strategy": "accessibility_id"},
+                {"target_selector": "profile", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"cart", "bag", "basket", "checkout"},
+            [
+                {"target_selector": "Cart", "selector_strategy": "text"},
+                {"target_selector": "Bag", "selector_strategy": "text"},
+                {"target_selector": "Checkout", "selector_strategy": "text"},
+                {"target_selector": "cart", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"wishlist", "wish", "saved", "favourite", "favorites"},
+            [
+                {"target_selector": "Wishlist", "selector_strategy": "text"},
+                {"target_selector": "Saved", "selector_strategy": "text"},
+                {"target_selector": "Favourites", "selector_strategy": "text"},
+                {"target_selector": "wishlist", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"home", "main", "feed", "discover"},
+            [
+                {"target_selector": "Home", "selector_strategy": "text"},
+                {"target_selector": "home", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"coupon", "offer", "promo", "discount", "voucher"},
+            [
+                {"target_selector": "Coupons", "selector_strategy": "text"},
+                {"target_selector": "Offers", "selector_strategy": "text"},
+                {"target_selector": "Promo", "selector_strategy": "text"},
+                {"target_selector": "coupon", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"category", "categories", "browse", "shop", "store"},
+            [
+                {"target_selector": "Shop", "selector_strategy": "text"},
+                {"target_selector": "Categories", "selector_strategy": "text"},
+                {"target_selector": "Browse", "selector_strategy": "text"},
+                {"target_selector": "Store", "selector_strategy": "text"},
+                {"target_selector": "shop", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"order", "orders", "purchase", "history"},
+            [
+                {"target_selector": "Orders", "selector_strategy": "text"},
+                {"target_selector": "My Orders", "selector_strategy": "text"},
+                {"target_selector": "Purchase History", "selector_strategy": "text"},
+                {"target_selector": "orders", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"search"},
+            [
+                {"target_selector": "Search", "selector_strategy": "text"},
+                {"target_selector": "search", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"notification", "notifications", "alert", "alerts"},
+            [
+                {"target_selector": "Notifications", "selector_strategy": "text"},
+                {"target_selector": "notifications", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+        (
+            {"settings", "setting", "preference", "preferences"},
+            [
+                {"target_selector": "Settings", "selector_strategy": "text"},
+                {"target_selector": "settings", "selector_strategy": "accessibility_id"},
+            ]
+        ),
+    ]
+
+    def _build_keyword_nav_steps(self, target_screen: str) -> list[CrawlStep]:
+        """
+        Generates heuristic navigation steps when the target screen is not in
+        navigation_map.json.  Matches the normalised screen name against keyword
+        groups and returns a list of CrawlStep candidates (the executor will try
+        each selector strategy in order via its own fallback logic).
+        Only the first matching group is used — multiple taps are avoided.
+        """
+        norm = self._normalize_name(target_screen)
+        for keywords, candidates in self._SCREEN_KEYWORD_NAV:
+            if any(kw in norm for kw in keywords):
+                # Use the first candidate as a single nav step (best guess).
+                # The executor's scroll+retry fallback will handle misses.
+                best = candidates[0]
+                logger.info(
+                    f"Using keyword-based nav for '{target_screen}' → tap '{best['target_selector']}' "
+                    f"via {best['selector_strategy']}"
+                )
+                return [CrawlStep(
+                    action_type="tap",
+                    target_selector=best["target_selector"],
+                    value=None,
+                    step_order=0,
+                    selector_strategy=best["selector_strategy"]
+                )]
+        return []
+
     def _build_navigation_steps(self, target_screen: str, current_screen: str) -> tuple[list[CrawlStep], bool]:
         """Looks up the target screen in sitemap and converts entries to CrawlSteps."""
         norm_target = self._normalize_name(target_screen)
