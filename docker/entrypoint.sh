@@ -78,8 +78,8 @@ adb devices
 echo "───────────────────────────────"
 
 # ── 3. Start Appium server in background ─────────────────────────────────────
-echo "🤖 Starting Appium server on port 4723..."
-appium --log-level error &
+echo "🤖 Starting Appium server on port 4723 (localhost only)..."
+appium --address 127.0.0.1 --log-level error &
 APPIUM_PID=$!
 
 # Wait for Appium to be ready
@@ -114,8 +114,9 @@ echo "════════════════════════�
 echo ""
 
 cd /app
+STREAMLIT_PORT=${PORT:-8501}
 exec streamlit run app_tag_auditor/frontend/app.py \
-    --server.port 8501 \
+    --server.port "$STREAMLIT_PORT" \
     --server.address 0.0.0.0 \
     --server.headless true \
     --browser.gatherUsageStats false
