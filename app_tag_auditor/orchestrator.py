@@ -38,15 +38,23 @@ class RuntimeAuditOrchestrator:
         all_names = {e.event_name for e in self.all_events}
         self.log_agent.start_capture(all_names)
         self.crawl_executor.execute_plan(plan, event=event)
+        # Only query the screen detector if the session is alive — avoids
+        # "cannot be proxied" errors flooding the log after a crash.
+        session_alive = not getattr(self.crawl_executor, '_session_dead', False) and self.crawl_executor.driver is not None
         detected_screen_immediately, detection_source_immediate = (
             self.screen_detector.detect(self.crawl_executor.driver)
-            if self.crawl_executor.driver is not None
-            else (None, "unknown")
+            if session_alive
+            else (None, "session_dead")
         )
         # best-effort: timestamp right after the plan's final step completes (approximate true device-side firing moment)
         trigger_timestamp = datetime.now().isoformat()
-        time.sleep(settings.RUNTIME_CAPTURE_BUFFER_SECONDS)
-        detected_screen, source = self.screen_detector.detect(self.crawl_executor.driver) if self.crawl_executor.driver is not None else (None, "unknown")
+        if session_alive:
+            time.sleep(settings.RUNTIME_CAPTURE_BUFFER_SECONDS)
+        detected_screen, source = (
+            self.screen_detector.detect(self.crawl_executor.driver)
+            if session_alive
+            else (None, "session_dead")
+        )
         self.log_agent.stop_capture()
         logs = self.log_agent.get_captured_logs()
         # Convert CapturedLog instances to dicts before constructing EventRuntimeCapture.

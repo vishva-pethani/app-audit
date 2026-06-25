@@ -472,6 +472,8 @@ class CrawlExecutorAgent:
     def _try_restart_session(self) -> bool:
         """
         Attempts to tear down the dead session and create a fresh one.
+        Uses force_reinstall=True to clear stale UiAutomator2 server state
+        that causes immediate instrumentation crashes on reconnect.
         Returns True on success, False if restart also fails.
         """
         logger.warning("Attempting Appium session restart after crash...")
@@ -483,9 +485,14 @@ class CrawlExecutorAgent:
                 pass
             self.driver = None
 
+        # Brief pause to let adb/UiAutomator2 release resources on the device
+        time.sleep(3)
+
         self._session_dead = False
         try:
-            self._build_driver()
+            # force_reinstall=True: tells Appium to reinstall the UiAutomator2
+            # server APK, clearing any corrupted state from the previous crash.
+            self._build_driver(force_reinstall=True)
             logger.info("Appium session restarted successfully.")
             return True
         except Exception as restart_err:
@@ -493,8 +500,13 @@ class CrawlExecutorAgent:
             self._session_dead = True
             return False
 
-    def _build_driver(self):
-        """Initializes the Appium WebDriver driver connection."""
+    def _build_driver(self, force_reinstall: bool = False):
+        """Initializes the Appium WebDriver driver connection.
+        
+        Args:
+            force_reinstall: When True, forces UiAutomator2 server reinstall
+                             (used during crash recovery to clear stale server state).
+        """
         from appium import webdriver
         from appium.options.android import UiAutomator2Options
 
@@ -504,13 +516,23 @@ class CrawlExecutorAgent:
         options.app = self.apk_path
         options.app_package = self.app_package
         options.automation_name = "UiAutomator2"
-        options.no_reset = True
         options.auto_grant_permissions = True
+
+        # On normal start: no_reset=True keeps app data (faster).
+        # On crash recovery: no_reset=False forces a clean reinstall of the
+        # UiAutomator2 server APK — this clears stale/corrupted server state
+        # that causes "instrumentation process is not running" immediately.
+        options.no_reset = not force_reinstall
+        if force_reinstall:
+            logger.info("Force-reinstall mode: clearing UiAutomator2 server state.")
+            # Allow Appium to reinstall the server and reset the instrumentation
+            options.skip_server_installation = False
+            options.skip_device_initialization = False
 
         # Increase UiAutomator2 server launch and install timeouts.
         # Default 30s is too short for large APKs or slower devices/emulators.
-        options.uiautomator2_server_launch_timeout = 90000   # ms — server start
-        options.uiautomator2_server_install_timeout = 90000  # ms — APK install
+        options.uiautomator2_server_launch_timeout = 120000  # ms — server start
+        options.uiautomator2_server_install_timeout = 120000 # ms — APK install
         options.adb_exec_timeout = 60000                     # ms — individual adb calls
         options.new_command_timeout = 300                    # s  — idle session timeout
 
@@ -766,8 +788,6 @@ class CrawlExecutorAgent:
         """Runs the complete ordered steps in a CrawlPlan."""
         if event is not None:
             self.logger.debug(f"execute_plan called for event '{event.event_name}'. Checking login states.")
-        if self.driver is None:
-            self._build_driver()
 
         # If previous event left the session dead, attempt a recovery restart now.
         if self._session_dead:
@@ -776,6 +796,16 @@ class CrawlExecutorAgent:
             if not recovered:
                 logger.error(f"Could not recover session for event '{plan.event_name}' — skipping.")
                 return False
+        elif self.driver is None:
+            # First-time driver init
+            self._build_driver()
+            # Check if _ensure_on_main_screen inside _build_driver set _session_dead
+            if self._session_dead:
+                logger.warning(f"Session crashed during init for event '{plan.event_name}'. Attempting restart...")
+                recovered = self._try_restart_session()
+                if not recovered:
+                    logger.error(f"Could not recover session after init crash for event '{plan.event_name}' — skipping.")
+                    return False
 
         logger.info(f"Initiating CrawlPlan execution for event '{plan.event_name}'")
         sorted_steps = sorted(plan.steps, key=lambda s: s.step_order)
