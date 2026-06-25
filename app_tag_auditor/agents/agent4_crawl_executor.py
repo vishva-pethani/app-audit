@@ -29,6 +29,10 @@ class CrawlExecutorAgent:
             )
         self.driver = None
         self.logger = logger
+        # Set to True when the Appium/UiAutomator2 instrumentation has crashed
+        # mid-session.  All subsequent calls will fail — events are skipped until
+        # the session is successfully restarted.
+        self._session_dead = False
 
     def _detect_login_screen_info(self, root):
         """
@@ -446,6 +450,49 @@ class CrawlExecutorAgent:
                 raise
             logger.error(f"Error in login intervention: {e}")
 
+    def _is_session_crash_error(self, exc: Exception) -> bool:
+        """
+        Returns True when the exception signals that the UiAutomator2
+        instrumentation process has crashed and the session is unrecoverable
+        without a full restart.
+        """
+        msg = str(exc).lower()
+        crash_phrases = [
+            "instrumentation process is not running",
+            "instrumentation process cannot be initialized",
+            "cannot be proxied",
+            "target app crashed",
+            "uiautomator2 server",
+            "session not found",
+            "invalid session id",
+            "no such session",
+        ]
+        return any(phrase in msg for phrase in crash_phrases)
+
+    def _try_restart_session(self) -> bool:
+        """
+        Attempts to tear down the dead session and create a fresh one.
+        Returns True on success, False if restart also fails.
+        """
+        logger.warning("Attempting Appium session restart after crash...")
+        # Tear down the dead session gracefully (best-effort)
+        if self.driver is not None:
+            try:
+                self.driver.quit()
+            except Exception:
+                pass
+            self.driver = None
+
+        self._session_dead = False
+        try:
+            self._build_driver()
+            logger.info("Appium session restarted successfully.")
+            return True
+        except Exception as restart_err:
+            logger.error(f"Session restart failed: {restart_err}")
+            self._session_dead = True
+            return False
+
     def _build_driver(self):
         """Initializes the Appium WebDriver driver connection."""
         from appium import webdriver
@@ -483,6 +530,11 @@ class CrawlExecutorAgent:
 
         logger.info("Ensuring app is on the main screen...")
 
+        # If the session is already dead, skip entirely.
+        if self._session_dead:
+            logger.warning("Session is dead — skipping _ensure_on_main_screen.")
+            return
+
         # If login is in progress, the app is mid-auth flow (OTP screen, etc.).
         # Don't press Back — just wait for the user to complete it naturally.
         if self.bridge and getattr(self.bridge, 'login_in_progress', False):
@@ -490,8 +542,20 @@ class CrawlExecutorAgent:
             return
 
         for attempt in range(4):
-            self._dismiss_popups()
-            self._check_login_intervention()
+            try:
+                self._dismiss_popups()
+            except Exception as e:
+                if self._is_session_crash_error(e):
+                    logger.error(f"🔴 Session crash in _ensure_on_main_screen (dismiss popups): {e}")
+                    self._session_dead = True
+                    return
+            try:
+                self._check_login_intervention()
+            except Exception as e:
+                if self._is_session_crash_error(e):
+                    logger.error(f"🔴 Session crash in _ensure_on_main_screen (login check): {e}")
+                    self._session_dead = True
+                    return
 
             # If login intervention was just triggered and credentials submitted,
             # the flag is now set — stop pressing back.
@@ -522,6 +586,10 @@ class CrawlExecutorAgent:
                     time.sleep(4)
                     continue
             except Exception as e:
+                if self._is_session_crash_error(e):
+                    logger.error(f"🔴 Session crash detected in _ensure_on_main_screen: {e}")
+                    self._session_dead = True
+                    return
                 logger.warning(f"Could not check current package: {e}")
 
             logger.info(f"App not confirmed in foreground (attempt {attempt + 1}/4). Pressing back...")
@@ -529,6 +597,10 @@ class CrawlExecutorAgent:
                 self.driver.back()
                 time.sleep(2)
             except Exception as e:
+                if self._is_session_crash_error(e):
+                    logger.error(f"🔴 Session crash on back press in _ensure_on_main_screen: {e}")
+                    self._session_dead = True
+                    return
                 logger.warning(f"Failed to press back: {e}")
 
     def _dismiss_popups(self):
@@ -637,6 +709,11 @@ class CrawlExecutorAgent:
 
     def execute_step(self, step: CrawlStep) -> bool:
         """Executes a single step action on the device UI."""
+        # If the session is already known-dead, skip immediately.
+        if self._session_dead:
+            logger.warning(f"Session is dead — skipping step {step.step_order} ({step.action_type}).")
+            return False
+
         logger.info(f"Executing step {step.step_order}: {step.action_type} target={step.target_selector} strategy={step.selector_strategy}")
 
         # Only dismiss system/app popups (permission dialogs etc.) before each step.
@@ -674,11 +751,16 @@ class CrawlExecutorAgent:
                 return False
             return True
         except Exception as e:
+            if self._is_session_crash_error(e):
+                logger.error(f"🔴 UiAutomator2 session crash detected at step {step.step_order}: {e}")
+                self._session_dead = True
+                return False
             logger.error(f"Step {step.step_order} execution failed: {e}")
             return False
         finally:
             # Only dismiss popups after the step — no login check here.
-            self._dismiss_popups()
+            if not self._session_dead:
+                self._dismiss_popups()
 
     def execute_plan(self, plan: CrawlPlan, event: ExpectedEvent | None = None) -> bool:
         """Runs the complete ordered steps in a CrawlPlan."""
@@ -687,12 +769,23 @@ class CrawlExecutorAgent:
         if self.driver is None:
             self._build_driver()
 
+        # If previous event left the session dead, attempt a recovery restart now.
+        if self._session_dead:
+            logger.warning(f"Session was dead before event '{plan.event_name}'. Attempting restart...")
+            recovered = self._try_restart_session()
+            if not recovered:
+                logger.error(f"Could not recover session for event '{plan.event_name}' — skipping.")
+                return False
+
         logger.info(f"Initiating CrawlPlan execution for event '{plan.event_name}'")
         sorted_steps = sorted(plan.steps, key=lambda s: s.step_order)
 
         for step in sorted_steps:
             success = self.execute_step(step)
             if not success:
+                if self._session_dead:
+                    logger.error(f"Session crashed during event '{plan.event_name}' — aborting remaining steps.")
+                    return False
                 logger.error(f"Step {step.step_order} failed. Terminating CrawlPlan.")
                 return False
             time.sleep(1)  # Allow UI to settle

@@ -67,8 +67,12 @@ class RuntimeAuditOrchestrator:
         """
         Best-effort screen reset between events.
         Navigates back to the main screen without relaunching the app.
+        Skips gracefully if the session is known to be dead.
         """
         driver = self.crawl_executor.driver
+        if getattr(self.crawl_executor, '_session_dead', False):
+            logger.warning("Session is dead — skipping reset_best_effort (recovery will happen at next execute_plan).")
+            return
         if driver is not None:
             logger.info("Navigating back to main screen between events...")
             try:
@@ -162,7 +166,17 @@ def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = 
     screen_detector = ScreenDetector()
     orchestrator = RuntimeAuditOrchestrator(executor, log_agent, screen_detector, expected_events)
 
-    events_and_plans = [(e, p) for p in crawl_plans for e in expected_events if e.event_name == p.event_name and e.screen == p.screen]
+    # Build a 1:1 mapping: each plan paired with its exact matching event.
+    # The old list-comprehension produced a cartesian product (N×M pairs) when
+    # there were multiple events/plans with the same name but different screens,
+    # resulting in e.g. 202 pairs for 20 events.  A dict keyed by (event_name,
+    # screen) guarantees at most one pair per event.
+    plan_map = {(p.event_name, p.screen): p for p in crawl_plans}
+    events_and_plans = [
+        (e, plan_map[(e.event_name, e.screen)])
+        for e in expected_events
+        if (e.event_name, e.screen) in plan_map
+    ]
     tele_val, run_val = TelemetryValidatorAgent(), RuntimeValidatorAgent()
     all_telemetry, all_runtime = [], []
 
