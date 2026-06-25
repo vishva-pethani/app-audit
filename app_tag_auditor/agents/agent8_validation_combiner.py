@@ -28,10 +28,11 @@ def _format_captured_log(log: CapturedLog) -> str:
             if k not in ("regionCode", "countryCode", "tyc_environment"):
                 params_lines.append(f"{k}={v}")
     params_lines.extend(["ga_event_origin(_o)=app", "manual_tracking(_mst)=1"])
+    params_str = ",\n".join(params_lines)
     return (
         f"{timestamp_str} 21272 5878 V FA-SVC : Logging event:\n"
         f"origin=app,name={log.event_name}{'(_vs)' if log.event_name == 'screen_view' else ''},params=Bundle[[\n"
-        f"{',\n'.join(params_lines)}\n"
+        f"{params_str}\n"
         f"]]"
     )
 
