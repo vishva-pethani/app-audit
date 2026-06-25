@@ -32,22 +32,39 @@ class CrawlExecutorAgent:
 
     def _detect_login_screen_info(self, root):
         """
-        Scans the UI hierarchy to find:
-        - Whether this is actually a login/signup screen (smarter keyword matching)
-        - Input fields (email, phone, password, OTP, etc.)
-        - Escape/skip buttons (Skip, Continue as Guest, etc.)
+        Scans the UI hierarchy to determine whether the current screen is an
+        interactive login/signup screen, and returns any input fields and
+        escape/skip options found.
+
+        Rules to avoid false positives:
+        - Must have at least one EditText input field on screen (a login screen
+          without an input field doesn't need intervention).
+        - AND either a high-confidence login keyword OR 2+ low-confidence keywords.
+        - High-confidence keywords are exact auth-screen labels, not generic words
+          that appear on profile/settings screens.
+
         Returns (is_login_screen, fields, escape_options)
         """
-        # High-confidence single keywords — one is enough
-        HIGH_CONF = {"sign in", "log in", "login", "signin", "sign up", "signup",
-                     "create account", "register", "forgot password", "create an account"}
-        # Low-confidence keywords — need at least 2 different ones present
-        LOW_CONF = {"password", "email", "mobile", "phone", "otp", "verification code",
-                    "continue with", "enter your"}
-        # Escape button labels
-        ESCAPE_LABELS = {"skip", "skip login", "skip sign in", "continue as guest", "guest",
-                         "maybe later", "not now", "no thanks", "browse", "explore",
-                         "continue without", "skip for now"}
+        # High-confidence: these words appear almost exclusively on auth screens.
+        # Deliberately excludes "register" (too generic — "register vehicle", etc.)
+        # and "forgot password" (appears in settings/security pages too).
+        HIGH_CONF = {
+            "sign in", "log in", "login", "signin",
+            "sign up", "signup", "create account", "create an account",
+        }
+        # Low-confidence: individually too common, but 2+ together signal auth.
+        LOW_CONF = {
+            "password", "otp", "verification code", "enter your",
+        }
+        # Escape button labels — tight list, avoids generic nav words.
+        ESCAPE_LABELS = {
+            "skip login", "skip sign in", "skip sign up",
+            "continue as guest", "continue without login",
+            "maybe later", "not now", "no thanks",
+            "skip for now",
+        }
+        # Single-word escapes only matched on buttons (clickable elements).
+        ESCAPE_SINGLE = {"skip", "guest"}
 
         high_hits = set()
         low_hits = set()
@@ -59,23 +76,29 @@ class CrawlExecutorAgent:
             desc = (node.attrib.get('content-desc') or '').strip()
             res_id = (node.attrib.get('resource-id') or '').lower()
             cls = (node.attrib.get('class') or '').lower()
-            combined_lower = f"{text.lower()} {desc.lower()} {res_id}"
+            clickable = node.attrib.get('clickable', 'false').lower() == 'true'
+            text_lower = text.lower()
+            desc_lower = desc.lower()
+            combined_lower = f"{text_lower} {desc_lower} {res_id}"
 
-            # Check high-confidence login keywords
+            # High-confidence: full-phrase match only (not substring of longer words)
             for kw in HIGH_CONF:
-                if kw in combined_lower:
+                # Use word-boundary style check: the keyword must appear as a
+                # standalone phrase, not as part of "registered", "login_button_id", etc.
+                import re as _re
+                if _re.search(r'(?<![a-z])' + _re.escape(kw) + r'(?![a-z])', combined_lower):
                     high_hits.add(kw)
 
-            # Check low-confidence keywords
+            # Low-confidence
             for kw in LOW_CONF:
                 if kw in combined_lower:
                     low_hits.add(kw)
 
-            # Detect input fields (EditText nodes)
+            # Detect input fields (EditText nodes only)
             if 'edittext' in cls:
-                label = text or desc
-                # Infer field type from hint/text/resource-id
-                combined_for_type = combined_lower
+                hint = (node.attrib.get('hint') or '').strip()
+                label = text or desc or hint
+                combined_for_type = f"{combined_lower} {hint.lower()}"
                 if any(k in combined_for_type for k in ("password", "pass")):
                     field_type = "password"
                 elif any(k in combined_for_type for k in ("otp", "verification", "code", "pin")):
@@ -86,21 +109,30 @@ class CrawlExecutorAgent:
                     field_type = "email"
                 else:
                     field_type = "text"
-                # Use hint attribute if text is empty
-                hint = (node.attrib.get('hint') or '').strip()
-                display_label = label or hint or field_type.capitalize()
+                display_label = label or field_type.capitalize()
                 rid = node.attrib.get('resource-id') or ''
                 fields.append({"label": display_label, "resource_id": rid, "field_type": field_type})
 
             # Detect escape/skip buttons
-            text_lower = text.lower()
+            # Multi-word escapes: match anywhere in text/desc
             for esc in ESCAPE_LABELS:
-                if esc in text_lower or esc in desc.lower():
+                if esc in text_lower or esc in desc_lower:
                     rid = node.attrib.get('resource-id') or ''
                     escape_options.append({"label": text or desc, "resource_id": rid})
                     break
+            else:
+                # Single-word escapes: only on clickable elements to avoid nav tabs
+                if clickable:
+                    for esc in ESCAPE_SINGLE:
+                        if text_lower == esc or desc_lower == esc:
+                            rid = node.attrib.get('resource-id') or ''
+                            escape_options.append({"label": text or desc, "resource_id": rid})
+                            break
 
-        is_login = bool(high_hits) or len(low_hits) >= 2
+        # Require BOTH: at least one input field AND auth keywords.
+        # A screen with no EditText is not an interactive login screen.
+        has_auth_keywords = bool(high_hits) or len(low_hits) >= 2
+        is_login = bool(fields) and has_auth_keywords
         return is_login, fields, escape_options
 
     def _inject_credentials(self, fields: list, credentials: dict):
@@ -611,10 +643,13 @@ class CrawlExecutorAgent:
     def execute_step(self, step: CrawlStep) -> bool:
         """Executes a single step action on the device UI."""
         logger.info(f"Executing step {step.step_order}: {step.action_type} target={step.target_selector} strategy={step.selector_strategy}")
-        
-        # Pre-step popup cleanup and login check
+
+        # Only dismiss system/app popups (permission dialogs etc.) before each step.
+        # Login/signup intervention is NOT checked here — it is only triggered at
+        # app startup (_build_driver → _ensure_on_main_screen) and between events
+        # (reset_best_effort → _ensure_on_main_screen). This prevents the auditor
+        # from treating normal form fields (search, booking, profile) as auth screens.
         self._dismiss_popups()
-        self._check_login_intervention()
 
         try:
             if step.action_type == "tap":
@@ -647,9 +682,8 @@ class CrawlExecutorAgent:
             logger.error(f"Step {step.step_order} execution failed: {e}")
             return False
         finally:
-            # Post-step popup cleanup and login check
+            # Only dismiss popups after the step — no login check here.
             self._dismiss_popups()
-            self._check_login_intervention()
 
     def execute_plan(self, plan: CrawlPlan, event: ExpectedEvent | None = None) -> bool:
         """Runs the complete ordered steps in a CrawlPlan."""
