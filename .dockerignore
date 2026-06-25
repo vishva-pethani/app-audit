@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+app_tag_auditor/venv/
+env/
+.tox/
+.coverage
+.cache
+.hypothesis/
+*.egg-info/
+dist/
+build/
+
+# Secrets — DO NOT bake into image
+app_tag_auditor/.env
+app_tag_auditor/client_secrets.json
+app_tag_auditor/credentials.json
+
+# Outputs / temp (will be bind-mounted at runtime)
+output/
+tmp/
+logs/
+*.log
+
+# Local binaries
+app_tag_auditor/bin/
+bin/
+
+# IDE / OS
+.kiro/
+.git/
+*.DS_Store
+.idea/
+.vscode/
+
+# Kiro
+.kiro/

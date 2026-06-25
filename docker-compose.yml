@@ -1,0 +1,68 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — App Tag Auditor
+#
+# Analyst workflow:
+#   1. Connect Android device via USB
+#   2. docker compose up
+#   3. Open http://localhost:8501 in the browser
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  app-tag-auditor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # ── Name & restart ─────────────────────────────────────────────────────
+    container_name: app-tag-auditor
+    restart: unless-stopped
+
+    # ── Privileged: required for ADB to access USB devices ────────────────
+    # Without this, the container's ADB daemon cannot see USB-connected
+    # Android devices that are plugged into the host.
+    privileged: true
+
+    # ── Share the host's network namespace ────────────────────────────────
+    # Simplest way to ensure ADB USB tunnelling & mDNS all work correctly.
+    network_mode: host
+
+    # ── Env file (secrets / config) — bind-mounted at runtime ─────────────
+    # Place your .env file in app_tag_auditor/ before running.
+    # The file is NOT baked into the image for security.
+    volumes:
+      # Config
+      - ./app_tag_auditor/.env:/app/app_tag_auditor/.env:ro
+      # Persist generated output reports on the host
+      - ./output:/app/output
+      # Persist decompiled APK cache for faster re-runs
+      - ./tmp:/app/tmp
+      # Persist audit logs
+      - ./logs:/app/logs
+      # USB device access (Linux host)
+      - /dev/bus/usb:/dev/bus/usb
+
+    # ── Pass through all USB devices ──────────────────────────────────────
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+
+    # ── Environment overrides (can also go in .env) ────────────────────────
+    environment:
+      - PYTHONUNBUFFERED=1
+      - JADX_PATH=/usr/local/bin/jadx
+      - APPIUM_SERVER_URL=http://localhost:4723
+      - TEMP_STORAGE_DIR=/app/tmp
+      - LOCAL_OUTPUT_PATH=/app/output/audit_results.xlsx
+
+    # ── Ports (only used when network_mode: host is NOT set) ──────────────
+    # Uncomment below if you change network_mode to bridge:
+    # ports:
+    #   - "8501:8501"   # Streamlit
+    #   - "4723:4723"   # Appium
+
+    # ── Health check ──────────────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
