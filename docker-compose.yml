@@ -53,6 +53,10 @@ services:
       - APPIUM_SERVER_URL=http://localhost:4723
       - TEMP_STORAGE_DIR=/app/tmp
       - LOCAL_OUTPUT_PATH=/app/output/audit_results.xlsx
+      - ANDROID_HOME=/opt/android-sdk
+      - ANDROID_SDK_ROOT=/opt/android-sdk
+      - JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/build-tools/34.0.0
 
     # ── Ports (only used when network_mode: host is NOT set) ──────────────
     # Uncomment below if you change network_mode to bridge:

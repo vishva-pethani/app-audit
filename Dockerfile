@@ -44,6 +44,22 @@ RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/j
     && ln -s /opt/jadx/bin/jadx /usr/local/bin/jadx \
     && rm /tmp/jadx.zip
 
+# ── Android SDK (required by Appium UIAutomator2) ─────────────────────────────
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -O /tmp/cmdline-tools.zip && \
+    unzip -q /tmp/cmdline-tools.zip -d ${ANDROID_HOME}/cmdline-tools && \
+    mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm /tmp/cmdline-tools.zip
+
+# Install platform-tools and build-tools via sdkmanager
+RUN yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_HOME} "platform-tools" "build-tools;34.0.0"
+
+# Add to PATH
+ENV PATH=${PATH}:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/34.0.0
+
 # ── App source code ───────────────────────────────────────────────────────────
 WORKDIR /app
 COPY app_tag_auditor/ ./app_tag_auditor/
