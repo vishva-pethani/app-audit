@@ -5,6 +5,13 @@ from google.oauth2.credentials import Credentials
 from core.drive_client import DriveClient
 import os
 
+def select_file_callback(file_id, file_name, key):
+    st.session_state[f"temp_selected_file_id_{key}"] = file_id
+    st.session_state[f"temp_selected_file_name_{key}"] = file_name
+
+def refresh_callback(key):
+    st.session_state.pop(f"all_drive_files_{key}", None)
+
 @st.dialog("Select a file", width="large")
 def drive_picker_dialog(mime_types: str, key: str):
     """
@@ -88,9 +95,13 @@ def drive_picker_dialog(mime_types: str, key: str):
             label_visibility="collapsed", 
             placeholder="Type file name to search..."
         )
-        if col_refresh_btn.button("🔄 Refresh", use_container_width=True, key=f"ref_btn_{key}"):
-            st.session_state.pop(f"all_drive_files_{key}", None)
-            st.rerun()
+        col_refresh_btn.button(
+            "🔄 Refresh", 
+            use_container_width=True, 
+            key=f"ref_btn_{key}",
+            on_click=refresh_callback,
+            args=(key,)
+        )
 
         # Load files into session state if not cached
         if f"all_drive_files_{key}" not in st.session_state:
@@ -173,10 +184,14 @@ def drive_picker_dialog(mime_types: str, key: str):
                         
                         btn_label = "✓ Selected" if is_selected else "Select"
                         btn_type = "primary" if is_selected else "secondary"
-                        if st.button(btn_label, key=f"sel_btn_{file_id}", use_container_width=True, type=btn_type):
-                            st.session_state[f"temp_selected_file_id_{key}"] = file_id
-                            st.session_state[f"temp_selected_file_name_{key}"] = file_name
-                            st.rerun()
+                        st.button(
+                            btn_label, 
+                            key=f"sel_btn_{file_id}", 
+                            use_container_width=True, 
+                            type=btn_type,
+                            on_click=select_file_callback,
+                            args=(file_id, file_name, key)
+                        )
 
         # Dialog Action Buttons
         st.markdown("<hr style='margin: 1.5rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.08);'>", unsafe_allow_html=True)

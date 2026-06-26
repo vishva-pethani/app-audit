@@ -309,6 +309,10 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "google_auth_token" not in st.session_state:
     st.session_state["google_auth_token"] = None
+if "google_refresh_token" not in st.session_state:
+    st.session_state["google_refresh_token"] = None
+if "google_token_expiry" not in st.session_state:
+    st.session_state["google_token_expiry"] = None
 if "user_profile" not in st.session_state:
     st.session_state["user_profile"] = None
 
@@ -321,10 +325,40 @@ if auth_data_json and not st.session_state["authenticated"]:
         import json
         auth_data = json.loads(auth_data_json)
         token = auth_data.get("token")
+        refresh_token = auth_data.get("refresh_token")
+        expiry = auth_data.get("expiry")
         profile = auth_data.get("profile")
+        
+        # Check if the access token has expired or is about to expire
+        if token and refresh_token and expiry:
+            import time
+            import requests
+            # If the token is expired or expires in less than 5 minutes (300 seconds), refresh it
+            if float(expiry) < time.time() + 300:
+                try:
+                    refresh_res = requests.post(
+                        "https://oauth2.googleapis.com/token",
+                        data={
+                            "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+                            "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                            "refresh_token": refresh_token,
+                            "grant_type": "refresh_token"
+                        },
+                        timeout=10
+                    )
+                    if refresh_res.status_code == 200:
+                        new_token_data = refresh_res.json()
+                        token = new_token_data.get("access_token")
+                        expires_in = new_token_data.get("expires_in", 3600)
+                        expiry = str(time.time() + expires_in)
+                except Exception:
+                    pass
+                    
         if token and profile:
             st.session_state["authenticated"] = True
             st.session_state["google_auth_token"] = token
+            st.session_state["google_refresh_token"] = refresh_token
+            st.session_state["google_token_expiry"] = expiry
             st.session_state["user_profile"] = profile
             st.rerun()
     except Exception:
@@ -336,11 +370,18 @@ if not st.session_state["authenticated"] and "code" not in st.query_params:
     <script>
     setTimeout(() => {
         const token = localStorage.getItem("google_auth_token");
+        const refreshToken = localStorage.getItem("google_refresh_token");
+        const expiry = localStorage.getItem("google_token_expiry");
         const profileStr = localStorage.getItem("user_profile");
         if (token && profileStr) {
             const textarea = parent.document.querySelector('textarea[aria-label="hidden_auth_widget"]') || document.querySelector('textarea[aria-label="hidden_auth_widget"]');
             if (textarea && textarea.value === "") {
-                const payload = JSON.stringify({ token: token, profile: JSON.parse(profileStr) });
+                const payload = JSON.stringify({ 
+                    token: token, 
+                    refresh_token: refreshToken, 
+                    expiry: expiry, 
+                    profile: JSON.parse(profileStr) 
+                });
                 const lastValue = textarea.value;
                 textarea.value = payload;
                 const event = new Event('input', { bubbles: true });
@@ -379,6 +420,9 @@ if "code" in query_params:
         if token_res.status_code == 200:
             token_data = token_res.json()
             access_token = token_data.get("access_token")
+            refresh_token = token_data.get("refresh_token")
+            expires_in = token_data.get("expires_in", 3600)
+            expiry = str(time.time() + expires_in)
             
             # Fetch user profile using the access token
             profile_res = requests.get(
@@ -390,13 +434,19 @@ if "code" in query_params:
                 profile = profile_res.json()
                 st.session_state["authenticated"] = True
                 st.session_state["google_auth_token"] = access_token
+                if refresh_token:
+                    st.session_state["google_refresh_token"] = refresh_token
+                st.session_state["google_token_expiry"] = expiry
                 st.session_state["user_profile"] = profile
                 
                 # Store in localStorage on first login
                 import json
+                refresh_part = f'localStorage.setItem("google_refresh_token", "{refresh_token}");' if refresh_token else ''
                 st.markdown(f"""
                 <script>
                 localStorage.setItem("google_auth_token", "{access_token}");
+                {refresh_part}
+                localStorage.setItem("google_token_expiry", "{expiry}");
                 localStorage.setItem("user_profile", '{json.dumps(profile)}');
                 </script>
                 """, unsafe_allow_html=True)
@@ -465,11 +515,45 @@ Sign in with Google
 if st.session_state.get("authenticated") and st.session_state.get("google_auth_token") and st.session_state.get("user_profile"):
     import json
     token = st.session_state["google_auth_token"]
+    refresh_token = st.session_state.get("google_refresh_token", "")
+    expiry = st.session_state.get("google_token_expiry", "")
     profile = st.session_state["user_profile"]
+    
+    # Live token expiry check and refresh if within 5 mins of expiry
+    if refresh_token and expiry:
+        try:
+            if float(expiry) < time.time() + 300:
+                import requests
+                refresh_res = requests.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+                        "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                        "refresh_token": refresh_token,
+                        "grant_type": "refresh_token"
+                    },
+                    timeout=10
+                )
+                if refresh_res.status_code == 200:
+                    new_token_data = refresh_res.json()
+                    token = new_token_data.get("access_token")
+                    st.session_state["google_auth_token"] = token
+                    expires_in = new_token_data.get("expires_in", 3600)
+                    expiry = str(time.time() + expires_in)
+                    st.session_state["google_token_expiry"] = expiry
+        except Exception:
+            pass
+
     st.markdown(f"""
     <script>
-    if (localStorage.getItem("google_auth_token") !== "{token}") {{
+    if (localStorage.getItem("google_auth_token") !== "{token}" || localStorage.getItem("google_token_expiry") !== "{expiry}") {{
         localStorage.setItem("google_auth_token", "{token}");
+        if ("{refresh_token}") {{
+            localStorage.setItem("google_refresh_token", "{refresh_token}");
+        }}
+        if ("{expiry}") {{
+            localStorage.setItem("google_token_expiry", "{expiry}");
+        }}
         localStorage.setItem("user_profile", '{json.dumps(profile)}');
     }}
     </script>
@@ -499,6 +583,8 @@ if st.session_state.get("authenticated") and st.session_state.get("user_profile"
             st.session_state["authenticated"] = False
             st.session_state["user_profile"] = None
             st.session_state["google_auth_token"] = None
+            st.session_state["google_refresh_token"] = None
+            st.session_state["google_token_expiry"] = None
             # Clear all selection & auth states
             for k in list(st.session_state.keys()):
                 if k.startswith("google_auth_token_") or k.startswith("drive_selection_"):
@@ -509,6 +595,8 @@ if st.session_state.get("authenticated") and st.session_state.get("user_profile"
             st.markdown("""
             <script>
             localStorage.removeItem("google_auth_token");
+            localStorage.removeItem("google_refresh_token");
+            localStorage.removeItem("google_token_expiry");
             localStorage.removeItem("user_profile");
             </script>
             """, unsafe_allow_html=True)

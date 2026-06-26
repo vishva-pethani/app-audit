@@ -517,6 +517,8 @@ class CrawlExecutorAgent:
         options.app_package = self.app_package
         options.automation_name = "UiAutomator2"
         options.auto_grant_permissions = True
+        options.ignore_hidden_api_policy_error = True
+        options.set_capability("appium:ignoreHiddenApiPolicyError", True)
 
         # On normal start: no_reset=True keeps app data (faster).
         # On crash recovery: no_reset=False forces a clean reinstall of the
