@@ -39,6 +39,8 @@ services:
       - ./tmp:/app/tmp
       # Persist audit logs
       - ./logs:/app/logs
+      # Persist auth sessions (7-day login persistence)
+      - ./.sessions:/app/app_tag_auditor/.sessions
       # USB device access (Linux host)
       - /dev/bus/usb:/dev/bus/usb
 

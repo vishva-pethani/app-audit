@@ -38,3 +38,6 @@ bin/
 app_tag_auditor/output/
 output/
 
+
+# Auth session files
+.sessions/

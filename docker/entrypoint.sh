@@ -119,4 +119,5 @@ exec streamlit run app_tag_auditor/frontend/app.py \
     --server.port "$STREAMLIT_PORT" \
     --server.address 0.0.0.0 \
     --server.headless true \
+    --server.maxUploadSize 500 \
     --browser.gatherUsageStats false
