@@ -41,3 +41,6 @@ output/
 
 # Auth session files
 .sessions/
+
+# JADX binary (downloaded by build.sh)
+.jadx/

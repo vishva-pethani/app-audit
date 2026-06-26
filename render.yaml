@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: app-audit
+    runtime: python
+    region: oregon
+    plan: free
+
+    # Root of the repo
+    rootDir: .
+
+    # Build: install deps + JADX
+    buildCommand: chmod +x build.sh && ./build.sh
+
+    # Start: launch Streamlit on the PORT Render injects
+    startCommand: >
+      streamlit run app_tag_auditor/frontend/app.py
+      --server.port $PORT
+      --server.address 0.0.0.0
+      --server.headless true
+      --server.maxUploadSize 500
+      --browser.gatherUsageStats false
+
+    # Health check endpoint
+    healthCheckPath: /_stcore/health
+
+    envVars:
+      # JADX binary location (matches where build.sh installs it)
+      - key: JADX_PATH
+        value: /opt/render/project/src/.jadx/bin/jadx
+
+      # Streamlit config
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+      # Session files dir (writable on Render)
+      - key: SESSIONS_DIR
+        value: /opt/render/project/src/.sessions
+
+      # Temp & output dirs (writable on Render)
+      - key: TEMP_STORAGE_DIR
+        value: /opt/render/project/src/tmp
+
+      - key: LOCAL_OUTPUT_PATH
+        value: /opt/render/project/src/output/audit_results.xlsx
+
+      # Appium is NOT available on Render cloud — set a dummy value
+      # The pipeline will gracefully fail at the crawl step only
+      - key: APPIUM_SERVER_URL
+        value: http://localhost:4723
+
+      # These must be set in the Render dashboard (secrets):
+      # - GOOGLE_OAUTH_CLIENT_ID
+      # - GOOGLE_OAUTH_CLIENT_SECRET
+      # - GOOGLE_OAUTH_REDIRECT_URI  (= https://app-audit.onrender.com)
+      # - GOOGLE_API_KEY
+      # - ANTHROPIC_API_KEY
