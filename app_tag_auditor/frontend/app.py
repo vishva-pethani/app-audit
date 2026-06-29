@@ -378,7 +378,7 @@ if not st.session_state["authenticated"] and "code" not in st.query_params:
             const parentParams = new URLSearchParams(window.parent.location.search);
             // Avoid infinite redirect loop
             if (parentParams.get('session_token')) return;
-            const tok = localStorage.getItem('app_session_token');
+            const tok = window.parent.localStorage.getItem('app_session_token');
             if (tok) {
                 parentParams.set('session_token', tok);
                 const newUrl = window.parent.location.pathname + '?' + parentParams.toString();
@@ -439,7 +439,7 @@ if "code" in query_params:
                 # (st.markdown scripts are NOT executed by browsers — React uses innerHTML)
                 _components.html(f"""
                 <script>
-                localStorage.setItem('app_session_token', '{session_tok}');
+                window.parent.localStorage.setItem('app_session_token', '{session_tok}');
                 </script>
                 """, height=0)
 
@@ -579,7 +579,7 @@ if st.session_state.get("authenticated") and st.session_state.get("user_profile"
 
             _components.html("""
             <script>
-            localStorage.removeItem('app_session_token');
+            window.parent.localStorage.removeItem('app_session_token');
             </script>
             """, height=0)
 
