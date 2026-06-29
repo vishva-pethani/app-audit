@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="App Tag Auditor - Automated Firebase Analytics APK Auditing System">
+    <title>App Tag Auditor - Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(22, 27, 42, 0.65);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #ffffff;
+            --text-secondary: #8f9cae;
+            --gradient-accent: linear-gradient(135deg, #ff8f00 0%, #ef4444 100%);
+            --btn-glow: rgba(255, 143, 0, 0.25);
+            --success-color: #22c55e;
+            --error-color: #ef4444;
+            --info-color: #3b82f6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Ambient Glowing Background Blobs */
+        .bg-glow-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .bg-glow-1 {
+            position: absolute;
+            top: -10%;
+            left: -10%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(255, 143, 0, 0.06) 0%, rgba(255, 143, 0, 0) 70%);
+            filter: blur(120px);
+        }
+
+        .bg-glow-2 {
+            position: absolute;
+            bottom: -10%;
+            right: -10%;
+            width: 700px;
+            height: 700px;
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.05) 0%, rgba(239, 68, 68, 0) 70%);
+            filter: blur(140px);
+        }
+
+        /* App Wrapper */
+        .app-container {
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            z-index: 2;
+        }
+
+        /* Top Header Component */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--gradient-accent);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(255, 143, 0, 0.3);
+        }
+
+        .logo-icon svg {
+            width: 28px;
+            height: 28px;
+            stroke: #ffffff;
+            stroke-width: 2.5;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: var(--gradient-accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-sub {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-top: 0.15rem;
+        }
+
+        /* User Profile Badge */
+        .profile-badge {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .profile-img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1.5px solid #ff8f00;
+        }
+
+        .profile-info {
+            font-size: 0.85rem;
+        }
+
+        .profile-name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .logout-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            margin-left: 0.5rem;
+            transition: color 0.2s;
+            text-decoration: underline;
+        }
+
+        .logout-btn:hover {
+            color: var(--error-color);
+        }
+
+        /* Main Content Layout */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 968px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Glassmorphic Panel Cards */
+        .panel-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2rem;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            transition: border-color 0.3s;
+        }
+
+        .panel-card:focus-within {
+            border-color: rgba(255, 143, 0, 0.3);
+        }
+
+        .panel-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #ff8f00;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        /* Selection Options */
+        .option-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .radio-container {
+            display: flex;
+            gap: 1rem;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            padding: 0.4rem;
+            border-radius: 10px;
+        }
+
+        .radio-label {
+            flex: 1;
+            text-align: center;
+            padding: 0.6rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .radio-input {
+            display: none;
+        }
+
+        .radio-input:checked + .radio-label {
+            background: var(--gradient-accent);
+            color: white;
+            box-shadow: 0 4px 10px rgba(255, 143, 0, 0.2);
+        }
+
+        /* File Upload Zone */
+        .upload-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .upload-zone:hover {
+            border-color: #ff8f00;
+            background: rgba(255, 143, 0, 0.02);
+        }
+
+        .upload-zone input {
+            display: none;
+        }
+
+        .upload-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .upload-filename {
+            font-size: 0.9rem;
+            color: var(--success-color);
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        /* URL Text Input box */
+        .text-input-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        input[type="text"] {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.8rem 1rem;
+            color: white;
+            font-family: inherit;
+            font-size: 0.9rem;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #ff8f00;
+            outline: none;
+            box-shadow: 0 0 10px rgba(255, 143, 0, 0.15);
+        }
+
+        /* Action Buttons */
+        .btn-primary {
+            background: var(--gradient-accent);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px var(--btn-glow);
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 143, 0, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            background: #2d3748;
+            color: #718096;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Console / Log Viewer Terminal */
+        .terminal-container {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .terminal {
+            background: #070913;
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.25rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            color: #d1d5db;
+            height: 350px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
+        }
+
+        /* Login Screen Card */
+        .login-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: calc(100vh - 12rem);
+            flex-grow: 1;
+        }
+
+        .login-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(25px);
+            border-radius: 24px;
+            padding: 3.5rem 2.5rem;
+            width: 100%;
+            max-width: 460px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.75rem;
+        }
+
+        .login-logo {
+            width: 72px;
+            height: 72px;
+            background: radial-gradient(circle, rgba(255, 143, 0, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%);
+            border: 1px solid rgba(255, 143, 0, 0.3);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 30px rgba(255, 143, 0, 0.25);
+        }
+
+        .login-logo svg {
+            width: 36px;
+            height: 36px;
+            stroke: #ff8f00;
+            stroke-width: 2.5;
+        }
+
+        .google-signin-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            background-color: white;
+            color: #1f2937;
+            font-weight: 600;
+            font-size: 0.95rem;
+            padding: 12px 24px;
+            border-radius: 12px;
+            text-decoration: none;
+            width: 100%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+
+        .google-signin-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(255, 143, 0, 0.3);
+        }
+
+        /* Human-in-the-Loop Dialog overlay */
+        .hitl-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .hitl-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .hitl-dialog {
+            background: #141926;
+            border: 2px solid #ff8f00;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 500px;
+            padding: 2rem;
+            box-shadow: 0 0 35px rgba(255,143,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            transform: scale(0.9);
+            transition: transform 0.3s;
+        }
+
+        .hitl-overlay.active .hitl-dialog {
+            transform: scale(1);
+        }
+
+        .hitl-title {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: #ff8f00;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .hitl-desc {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .hitl-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .hitl-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 0.5rem;
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border-color);
+            color: white;
+            border-radius: 10px;
+            padding: 0.8rem;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            flex: 1;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* Results / Report Editor Grid Component */
+        .results-container {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tabs-header {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.5rem 1.25rem;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: rgba(255,143,0,0.1);
+            color: #ff8f00;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #111522;
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        th {
+            background: #181d2e;
+            color: #ff8f00;
+            padding: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid rgba(255,255,255,0.08);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            vertical-align: top;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.8rem;
+            display: inline-block;
+        }
+
+        .badge-implemented { background-color: #dcfce7; color: #166534; }
+        .badge-issues { background-color: #fef9c3; color: #854d0e; }
+        .badge-missing { background-color: #f1f5f9; color: #475569; }
+        .badge-failed { background-color: #fee2e2; color: #991b1b; }
+
+        select.table-select {
+            background: #1b2234;
+            color: white;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.4rem 0.8rem;
+            font-family: inherit;
+            width: 100%;
+            cursor: pointer;
+        }
+
+        textarea.table-textarea {
+            background: #1b2234;
+            color: #e5e7eb;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.5rem;
+            font-family: inherit;
+            font-size: 0.85rem;
+            width: 100%;
+            min-height: 60px;
+            resize: vertical;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-glow-container">
+        <div class="bg-glow-1"></div>
+        <div class="bg-glow-2"></div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-wrapper" style="display: none;">
+        <div class="login-card">
+            <div class="login-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                    <circle cx="12" cy="5" r="2"></circle>
+                    <path d="M12 7v4"></path>
+                    <line x1="8" y1="16" x2="8" y2="16"></line>
+                    <line x1="16" y1="16" x2="16" y2="16"></line>
+                </svg>
+            </div>
+            <div>
+                <h2>App Tag Auditor</h2>
+                <p class="logo-sub" style="margin-top: 0.25rem;">Automated Firebase Analytics APK Auditor</p>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; line-height: 1.5; margin-bottom: 0.5rem;">
+                Please authorize Google Account OAuth to load test event sheets and Drive artifacts.
+            </p>
+            <button id="google-login-btn" class="google-signin-btn">
+                <svg viewBox="0 0 24 24" width="18" height="18" style="margin-right: 8px;">
+                    <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.256-3.133C18.28 1.705 15.49 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.984 0-.742-.08-1.302-.178-1.782h-10.62z"/>
+                </svg>
+                Sign in with Google
+            </button>
+        </div>
+    </div>
+
+    <!-- Dashboard Screen -->
+    <div id="dashboard-screen" class="app-container" style="display: none;">
+        <header>
+            <div class="logo-group">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                        <circle cx="12" cy="5" r="2"></circle>
+                        <path d="M12 7v4"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1>App Tag Auditor</h1>
+                    <div class="logo-sub">Automated Firebase Analytics APK Auditing System</div>
+                </div>
+            </div>
+            
+            <div id="profile-container" class="profile-badge">
+                <img id="profile-pic" class="profile-img" src="" alt="avatar">
+                <div class="profile-info">
+                    <div id="profile-name" class="profile-name">Loading...</div>
+                    <button id="logout-btn" class="logout-btn">Sign Out</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <!-- Left Config Card: APK -->
+            <div class="panel-card">
+                <div class="panel-title">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span>📁 Target Android APK</span>
+                </div>
+                
+                <div class="option-group">
+                    <div class="radio-container">
+                        <input type="radio" id="apk-local" name="apk-source" value="local" checked class="radio-input">
+                        <label for="apk-local" class="radio-label">Local Upload</label>
+                        
+                        <input type="radio" id="apk-drive" name="apk-source" value="drive" class="radio-input">
+                        <label for="apk-drive" class="radio-label">Google Drive Picker</label>
+                    </div>
+
+                    <!-- Local Upload Zone -->
+                    <div id="apk-upload-container" class="upload-zone" onclick="document.getElementById('apk-file-input').click()">
+                        <input type="file" id="apk-file-input" accept=".apk">
+                        <div class="upload-text">
+                            <strong>Click to select APK file</strong> or drag and drop here
+                        </div>
+                        <div id="apk-upload-status" class="upload-filename" style="display: none;"></div>
+                    </div>
+
+                    <!-- Drive Picker text box -->
+                    <div id="apk-drive-container" class="text-input-wrapper" style="display: none;">
+                        <input type="text" id="apk-drive-url" placeholder="Paste Google Drive File Link or ID">
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);">Supports full Drive links or specific 25-100 char File IDs</span>
+                        <button id="btn-resolve-apk" class="btn-secondary" style="margin-top: 0.5rem; padding: 0.6rem;">Resolve & Fetch APK</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Config Card: Schema Sheet -->
+            <div class="panel-card">
+                <div class="panel-title">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                    <span>📊 Event Schema Sheet</span>
+                </div>
+
+                <div class="option-group">
+                    <div class="radio-container">
+                        <input type="radio" id="schema-local" name="schema-source" value="local" checked class="radio-input">
+                        <label for="schema-local" class="radio-label">Local Upload</label>
+                        
+                        <input type="radio" id="schema-sheets" name="schema-source" value="sheets" class="radio-input">
+                        <label for="schema-sheets" class="radio-label">Google Sheets URL</label>
+                    </div>
+
+                    <!-- Local Upload Zone -->
+                    <div id="schema-upload-container" class="upload-zone" onclick="document.getElementById('schema-file-input').click()">
+                        <input type="file" id="schema-file-input" accept=".xlsx,.xls,.csv">
+                        <div class="upload-text">
+                            <strong>Click to select schema file</strong> or drag and drop here
+                        </div>
+                        <div id="schema-upload-status" class="upload-filename" style="display: none;"></div>
+                    </div>
+
+                    <!-- Sheets URL text box -->
+                    <div id="schema-sheets-container" class="text-input-wrapper" style="display: none;">
+                        <input type="text" id="schema-sheet-url" placeholder="Paste Google Spreadsheet URL">
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);">Sheet will be automatically fetched using active credentials</span>
+                        <button id="btn-resolve-schema" class="btn-secondary" style="margin-top: 0.5rem; padding: 0.6rem;">Resolve & Fetch Sheet</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Run Button -->
+            <div style="grid-column: 1 / -1; margin-top: 0.5rem;">
+                <button id="run-pipeline-btn" class="btn-primary" disabled>🚀 Run Analytics Audit Pipeline</button>
+            </div>
+
+            <!-- Console Log Terminal -->
+            <div class="terminal-container">
+                <div class="panel-title" style="margin-bottom: 0.25rem;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    <span>📺 Live Audit Console Logs</span>
+                </div>
+                <div id="log-terminal" class="terminal">Console idle. Select APK and event schema, then run audit...</div>
+            </div>
+
+            <!-- Results Grid Section -->
+            <div id="results-section" class="results-container" style="display: none;">
+                <div class="results-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></polyline><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <span>📝 Audit Results Report & Interactive Verification</span>
+                    </div>
+                    <button id="download-report-btn" class="btn-secondary" style="max-width: 250px;">📥 Download Generated Excel Report</button>
+                </div>
+
+                <div id="tabs-bar" class="tabs-header"></div>
+                
+                <div class="table-responsive">
+                    <table id="results-table">
+                        <thead><tr id="table-headers"></tr></thead>
+                        <tbody id="table-rows"></tbody>
+                    </table>
+                </div>
+
+                <div style="text-align: right; margin-top: 0.5rem;">
+                    <button id="save-edits-btn" class="btn-primary" style="max-width: 260px;">💾 Save Edits to Excel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Human-in-the-loop Prompt overlay -->
+    <div id="hitl-overlay" class="hitl-overlay">
+        <div class="hitl-dialog">
+            <div class="hitl-title">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path></svg>
+                <span id="hitl-title-text">🔑 Authentication Prompt</span>
+            </div>
+            <p id="hitl-desc-text" class="hitl-desc">
+                The device has encountered a login or verification screen. Please provide credentials to proceed with automated crawling.
+            </p>
+            <div id="hitl-form-fields" class="hitl-form"></div>
+            
+            <div id="hitl-initial-actions" class="hitl-actions">
+                <button id="btn-hitl-login" class="btn-primary" style="flex: 1;">🔐 Login Flow</button>
+                <button id="btn-hitl-signup" class="btn-secondary" style="flex: 1;">📝 Sign Up Flow</button>
+            </div>
+            
+            <div id="hitl-escape-options-title" style="font-weight: 600; font-size: 0.9rem; color: #ff8f00; display: none;">Or tap a detected escape option:</div>
+            <div id="hitl-escape-actions" class="hitl-actions" style="flex-wrap: wrap;"></div>
+
+            <div class="hitl-actions">
+                <button id="btn-hitl-skip" class="btn-secondary">⬅️ Skip / Go Back</button>
+                <button id="btn-hitl-abort" class="btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: var(--error-color);">🛑 Abort Audit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        let googleClientId = "";
+        let googleRedirectUri = "";
+        let authCodeChecked = false;
+        let pollingInterval = null;
+        let currentStatus = "idle";
+        let sheetsData = {};
+        let activeSheetName = "";
+
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchConfig();
+            checkAuth();
+            setupEventListeners();
+        });
+
+        function fetchConfig() {
+            fetch("/api/config")
+                .then(r => r.json())
+                .then(data => {
+                    googleClientId = data.google_client_id;
+                    googleRedirectUri = data.google_redirect_uri;
+                });
+        }
+
+        function checkAuth() {
+            fetch("/api/profile")
+                .then(r => {
+                    if (r.ok) return r.json();
+                    throw new Error("Unauthenticated");
+                })
+                .then(data => {
+                    document.getElementById("login-screen").style.display = "none";
+                    document.getElementById("dashboard-screen").style.display = "block";
+                    document.getElementById("profile-pic").src = data.profile.picture || "";
+                    document.getElementById("profile-name").textContent = data.profile.name || "User";
+                    validateInputs();
+                    startStatusPolling();
+                })
+                .catch(() => {
+                    document.getElementById("dashboard-screen").style.display = "none";
+                    document.getElementById("login-screen").style.display = "flex";
+                });
+        }
+
+        function setupEventListeners() {
+            // Google Login
+            document.getElementById("google-login-btn").addEventListener("click", () => {
+                if (!googleClientId) {
+                    alert("Google Client ID is not configured.");
+                    return;
+                }
+                const scopes = "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets";
+                const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(googleClientId)}&redirect_uri=${encodeURIComponent(googleRedirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent`;
+                window.location.replace(authUrl);
+            });
+
+            // Logout
+            document.getElementById("logout-btn").addEventListener("click", () => {
+                fetch("/api/logout", { method: "POST" })
+                    .then(() => checkAuth());
+            });
+
+            // Source switches (APK / Schema)
+            document.querySelectorAll('input[name="apk-source"]').forEach(input => {
+                input.addEventListener("change", (e) => {
+                    if (e.target.value === "local") {
+                        document.getElementById("apk-upload-container").style.display = "block";
+                        document.getElementById("apk-drive-container").style.display = "none";
+                    } else {
+                        document.getElementById("apk-upload-container").style.display = "none";
+                        document.getElementById("apk-drive-container").style.display = "block";
+                    }
+                    validateInputs();
+                });
+            });
+
+            document.querySelectorAll('input[name="schema-source"]').forEach(input => {
+                input.addEventListener("change", (e) => {
+                    if (e.target.value === "local") {
+                        document.getElementById("schema-upload-container").style.display = "block";
+                        document.getElementById("schema-sheets-container").style.display = "none";
+                    } else {
+                        document.getElementById("schema-upload-container").style.display = "none";
+                        document.getElementById("schema-sheets-container").style.display = "block";
+                    }
+                    validateInputs();
+                });
+            });
+
+            // Local file selectors
+            document.getElementById("apk-file-input").addEventListener("change", (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const formData = new FormData();
+                formData.append("file", file);
+                
+                const status = document.getElementById("apk-upload-status");
+                status.style.display = "block";
+                status.textContent = `Uploading: ${file.name}...`;
+
+                fetch("/api/upload/apk", {
+                    method: "POST",
+                    body: formData
+                })
+                .then(r => r.json())
+                .then(data => {
+                    status.textContent = `✓ Uploaded: ${data.filename}`;
+                    validateInputs();
+                })
+                .catch(err => {
+                    status.textContent = `❌ Upload failed`;
+                });
+            });
+
+            document.getElementById("schema-file-input").addEventListener("change", (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const formData = new FormData();
+                formData.append("file", file);
+                
+                const status = document.getElementById("schema-upload-status");
+                status.style.display = "block";
+                status.textContent = `Uploading: ${file.name}...`;
+
+                fetch("/api/upload/schema", {
+                    method: "POST",
+                    body: formData
+                })
+                .then(r => r.json())
+                .then(data => {
+                    status.textContent = `✓ Uploaded: ${data.filename}`;
+                    validateInputs();
+                })
+                .catch(err => {
+                    status.textContent = `❌ Upload failed`;
+                });
+            });
+
+            // Resolve Google Drive APK
+            document.getElementById("btn-resolve-apk").addEventListener("click", () => {
+                const urlOrId = document.getElementById("apk-drive-url").value.trim();
+                if (!urlOrId) {
+                    alert("Please enter a Google Drive File link or ID.");
+                    return;
+                }
+                const btn = document.getElementById("btn-resolve-apk");
+                btn.textContent = "Resolving & Downloading...";
+                btn.disabled = true;
+
+                // Simple client side drive parser
+                let fileId = urlOrId;
+                if (urlOrId.includes("/file/d/")) {
+                    fileId = urlOrId.split("/file/d/")[1].split("/")[0];
+                } else if (urlOrId.includes("id=")) {
+                    fileId = urlOrId.split("id=")[1].split("&")[0];
+                }
+
+                fetch("/api/drive/picker", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ file_id: fileId, file_name: "drive_file.apk" })
+                })
+                .then(r => {
+                    if (r.ok) return r.json();
+                    throw new Error();
+                })
+                .then(data => {
+                    btn.textContent = `✓ Resolved: ${data.filename}`;
+                    btn.style.color = "var(--success-color)";
+                    validateInputs();
+                })
+                .catch(() => {
+                    btn.textContent = "❌ Resolution Failed";
+                    btn.style.color = "var(--error-color)";
+                    btn.disabled = false;
+                });
+            });
+
+            // Resolve Google Sheets URL
+            document.getElementById("btn-resolve-schema").addEventListener("click", () => {
+                const sheetUrl = document.getElementById("schema-sheet-url").value.trim();
+                if (!sheetUrl) {
+                    alert("Please enter a Google Sheet URL.");
+                    return;
+                }
+                const btn = document.getElementById("btn-resolve-schema");
+                btn.textContent = "Resolving & Fetching...";
+                btn.disabled = true;
+
+                fetch("/api/sheets/picker", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ sheet_url: sheetUrl })
+                })
+                .then(r => {
+                    if (r.ok) return r.json();
+                    throw new Error();
+                })
+                .then(data => {
+                    btn.textContent = `✓ Resolved: ${data.filename}`;
+                    btn.style.color = "var(--success-color)";
+                    validateInputs();
+                })
+                .catch(() => {
+                    btn.textContent = "❌ Fetch Failed";
+                    btn.style.color = "var(--error-color)";
+                    btn.disabled = false;
+                });
+            });
+
+            // Run Pipeline Action
+            document.getElementById("run-pipeline-btn").addEventListener("click", () => {
+                const btn = document.getElementById("run-pipeline-btn");
+                btn.textContent = "Starting Pipeline...";
+                btn.disabled = true;
+
+                fetch("/api/run", { method: "POST" })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.error) {
+                            alert(data.error);
+                            btn.textContent = "🚀 Run Analytics Audit Pipeline";
+                            btn.disabled = false;
+                        } else {
+                            document.getElementById("results-section").style.display = "none";
+                            startStatusPolling();
+                        }
+                    });
+            });
+
+            // Save report edits
+            document.getElementById("save-edits-btn").addEventListener("click", () => {
+                saveReportChanges();
+            });
+
+            // Download report button
+            document.getElementById("download-report-btn").addEventListener("click", () => {
+                window.location.href = "/api/results/download";
+            });
+        }
+
+        function validateInputs() {
+            const runBtn = document.getElementById("run-pipeline-btn");
+            const apkSource = document.querySelector('input[name="apk-source"]:checked').value;
+            const schemaSource = document.querySelector('input[name="schema-source"]:checked').value;
+            
+            let apkReady = false;
+            let schemaReady = false;
+
+            if (apkSource === "local") {
+                const status = document.getElementById("apk-upload-status").textContent;
+                apkReady = status.startsWith("✓ Uploaded:");
+            } else {
+                const status = document.getElementById("btn-resolve-apk").textContent;
+                apkReady = status.startsWith("✓ Resolved:");
+            }
+
+            if (schemaSource === "local") {
+                const status = document.getElementById("schema-upload-status").textContent;
+                schemaReady = status.startsWith("✓ Uploaded:");
+            } else {
+                const status = document.getElementById("btn-resolve-schema").textContent;
+                schemaReady = status.startsWith("✓ Resolved:");
+            }
+
+            runBtn.disabled = !(apkReady && schemaReady);
+        }
+
+        function startStatusPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(pollStatus, 1000);
+            pollStatus();
+        }
+
+        function pollStatus() {
+            fetch("/api/status")
+                .then(r => r.json())
+                .then(data => {
+                    currentStatus = data.status;
+                    
+                    // Render Logs in Terminal
+                    const terminal = document.getElementById("log-terminal");
+                    if (data.logs) {
+                        terminal.textContent = data.logs;
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                    
+                    // Manage Run button text
+                    const runBtn = document.getElementById("run-pipeline-btn");
+                    if (data.status === "running") {
+                        runBtn.disabled = true;
+                        runBtn.textContent = "⏳ Pipeline Running...";
+                    } else {
+                        runBtn.textContent = "🚀 Run Analytics Audit Pipeline";
+                        validateInputs();
+                    }
+
+                    // Handle Human-in-the-loop overlays
+                    handleHITLPrompt(data.hitl);
+
+                    // Load results if completed
+                    if (data.status === "completed") {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        loadResultsReport();
+                    } else if (data.status === "error") {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        alert(`❌ Pipeline failed: ${data.error}`);
+                    }
+                });
+        }
+
+        function handleHITLPrompt(hitl) {
+            const overlay = document.getElementById("hitl-overlay");
+            if (!hitl) {
+                overlay.classList.remove("active");
+                return;
+            }
+
+            overlay.classList.add("active");
+            
+            const fieldsContainer = document.getElementById("hitl-form-fields");
+            fieldsContainer.innerHTML = "";
+
+            const initialActions = document.getElementById("hitl-initial-actions");
+            const escapeActions = document.getElementById("hitl-escape-actions");
+            const escapeTitle = document.getElementById("hitl-escape-options-title");
+
+            escapeActions.innerHTML = "";
+            escapeTitle.style.display = "none";
+
+            const fields = hitl.fields || [];
+            const escapeOptions = hitl.escape_options || [];
+
+            if (hitl.mid_login_fields) {
+                // Mid login (e.g. OTP subscreen)
+                document.getElementById("hitl-title-text").textContent = "📲 Verification Step Detected";
+                document.getElementById("hitl-desc-text").textContent = "The app has moved to the next authentication step and requires verification details.";
+                initialActions.style.display = "none";
+                
+                fields.forEach((field, i) => {
+                    const label = field.label || field.field_type || "Verification Field";
+                    const isPassword = label.toLowerCase().includes("password") || field.field_type === "password";
+                    fieldsContainer.appendChild(createInputField(label, field.resource_id, isPassword, i));
+                });
+
+                // Inject a standard submit button at the bottom of form fields
+                const submitBtn = document.createElement("button");
+                submitBtn.className = "btn-primary";
+                submitBtn.textContent = "Submit Verification";
+                submitBtn.onclick = () => submitHITLResponse("submit_fields");
+                fieldsContainer.appendChild(submitBtn);
+            } else {
+                // Initial login page encounter
+                document.getElementById("hitl-title-text").textContent = "🔑 Authentication Screen Encountered";
+                document.getElementById("hitl-desc-text").textContent = "The crawler has paused at an authentication screen. Please choose how to proceed:";
+                initialActions.style.display = "flex";
+
+                // Setup Phase 2 trigger on button click
+                document.getElementById("btn-hitl-login").onclick = () => showHITLCredentialsForm("login", fields);
+                document.getElementById("btn-hitl-signup").onclick = () => showHITLCredentialsForm("signup", fields);
+
+                // Render escape options if present
+                if (escapeOptions.length > 0) {
+                    escapeTitle.style.display = "block";
+                    escapeOptions.forEach(opt => {
+                        const btn = document.createElement("button");
+                        btn.className = "btn-secondary";
+                        btn.style.margin = "0.25rem";
+                        btn.textContent = `↩️ ${opt.label}`;
+                        btn.onclick = () => submitHITLResponse(`escape:${opt.resource_id || opt.label}`);
+                        escapeActions.appendChild(btn);
+                    });
+                }
+            }
+
+            // Setup cancel/abort
+            document.getElementById("btn-hitl-skip").onclick = () => submitHITLResponse("skip");
+            document.getElementById("btn-hitl-abort").onclick = () => submitHITLResponse("abort");
+        }
+
+        function createInputField(label, id, isPassword, idx) {
+            const wrapper = document.createElement("div");
+            wrapper.className = "text-input-wrapper";
+            
+            const labelEl = document.createElement("label");
+            labelEl.textContent = label;
+            labelEl.style.fontSize = "0.85rem";
+            labelEl.style.fontWeight = "600";
+
+            const input = document.createElement("input");
+            input.type = isPassword ? "password" : "text";
+            input.id = `hitl-field-${idx}`;
+            input.dataset.resourceId = id;
+            input.placeholder = `Enter your ${label.toLowerCase()}`;
+
+            wrapper.appendChild(labelEl);
+            wrapper.appendChild(input);
+            return wrapper;
+        }
+
+        function showHITLCredentialsForm(mode, fields) {
+            document.getElementById("hitl-initial-actions").style.display = "none";
+            document.getElementById("hitl-escape-options-title").style.display = "none";
+            document.getElementById("hitl-escape-actions").innerHTML = "";
+
+            const fieldsContainer = document.getElementById("hitl-form-fields");
+            fieldsContainer.innerHTML = "";
+
+            if (fields.length === 0) {
+                fields = [
+                    {label: "Email / Phone", resource_id: "_fallback_email", field_type: "email"},
+                    {label: "Password", resource_id: "_fallback_password", field_type: "password"}
+                ];
+            }
+
+            fields.forEach((field, i) => {
+                const label = field.label || field.field_type || "Field";
+                const isPassword = label.toLowerCase().includes("password") || field.field_type === "password";
+                fieldsContainer.appendChild(createInputField(label, field.resource_id, isPassword, i));
+            });
+
+            const submitBtn = document.createElement("button");
+            submitBtn.className = "btn-primary";
+            submitBtn.textContent = `Submit & ${mode === "login" ? "Login" : "Sign Up"}`;
+            submitBtn.onclick = () => submitHITLResponse(mode);
+            fieldsContainer.appendChild(submitBtn);
+        }
+
+        function submitHITLResponse(decision) {
+            const credentials = {};
+            document.querySelectorAll("#hitl-form-fields input").forEach(input => {
+                const resId = input.dataset.resourceId || input.id;
+                credentials[resId] = input.value;
+            });
+
+            fetch("/api/hitl/respond", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ decision, credentials })
+            })
+            .then(r => r.json())
+            .then(() => {
+                document.getElementById("hitl-overlay").classList.remove("active");
+            });
+        }
+
+        function loadResultsReport() {
+            fetch("/api/results")
+                .then(r => r.json())
+                .then(data => {
+                    sheetsData = data.data;
+                    document.getElementById("results-section").style.display = "flex";
+                    
+                    // Render sheet tabs
+                    const tabsBar = document.getElementById("tabs-bar");
+                    tabsBar.innerHTML = "";
+
+                    data.sheets.forEach((sheetName, i) => {
+                        const btn = document.createElement("button");
+                        btn.className = `tab-btn ${i === 0 ? "active" : ""}`;
+                        btn.textContent = sheetName;
+                        btn.onclick = (e) => {
+                            document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                            btn.classList.add("active");
+                            renderSheetTable(sheetName);
+                        };
+                        tabsBar.appendChild(btn);
+                    });
+
+                    // Render first sheet
+                    if (data.sheets.length > 0) {
+                        renderSheetTable(data.sheets[0]);
+                    }
+                });
+        }
+
+        function renderSheetTable(sheetName) {
+            activeSheetName = sheetName;
+            const sheet = sheetsData[sheetName];
+            const headersRow = document.getElementById("table-headers");
+            const rowsContainer = document.getElementById("table-rows");
+
+            headersRow.innerHTML = "";
+            rowsContainer.innerHTML = "";
+
+            // Render headers
+            sheet.headers.forEach(h => {
+                const th = document.createElement("th");
+                th.textContent = h;
+                headersRow.appendChild(th);
+            });
+
+            const isSummary = sheetName === "Audit Summary";
+
+            // Render rows
+            sheet.rows.forEach((row, rowIdx) => {
+                const tr = document.createElement("tr");
+                sheet.headers.forEach(h => {
+                    const td = document.createElement("td");
+                    const val = row[h];
+
+                    if (isSummary) {
+                        if (h === "Static Status Category") {
+                            td.innerHTML = getStatusBadge(val);
+                        } else {
+                            td.textContent = val;
+                        }
+                    } else {
+                        // Editable inputs for Status, Comments, Logs
+                        if (h === "Status") {
+                            const select = document.createElement("select");
+                            select.className = "table-select";
+                            select.name = `status_${rowIdx}`;
+                            ["Implemented", "Implemented with issues", "Scenario Not Found", "Not Implemented"].forEach(opt => {
+                                const option = document.createElement("option");
+                                option.value = opt;
+                                option.textContent = opt;
+                                if (opt === String(val)) option.selected = true;
+                                select.appendChild(option);
+                            });
+                            td.appendChild(select);
+                        } else if (h === "Comments") {
+                            const textarea = document.createElement("textarea");
+                            textarea.className = "table-textarea";
+                            textarea.name = `comments_${rowIdx}`;
+                            textarea.value = val || "";
+                            td.appendChild(textarea);
+                        } else if (h === "Logs") {
+                            const textarea = document.createElement("textarea");
+                            textarea.className = "table-textarea";
+                            textarea.style.fontFamily = "monospace";
+                            textarea.name = `logs_${rowIdx}`;
+                            textarea.value = val || "";
+                            td.appendChild(textarea);
+                        } else {
+                            td.textContent = val;
+                        }
+                    }
+                    tr.appendChild(td);
+                });
+                rowsContainer.appendChild(tr);
+            });
+
+            // Toggle save button visibility
+            document.getElementById("save-edits-btn").style.display = isSummary ? "none" : "inline-block";
+        }
+
+        function getStatusBadge(val) {
+            const clean = String(val).trim();
+            if (clean === "Implemented") return '<span class="badge badge-implemented">Implemented</span>';
+            if (clean === "Implemented with issues") return '<span class="badge badge-issues">Implemented with issues</span>';
+            if (clean === "Scenario Not Found") return '<span class="badge badge-missing">Scenario Not Found</span>';
+            if (clean === "Not Implemented") return '<span class="badge badge-failed">Not Implemented</span>';
+            return clean;
+        }
+
+        function saveReportChanges() {
+            const saveBtn = document.getElementById("save-edits-btn");
+            saveBtn.textContent = "Saving to Workbook...";
+            saveBtn.disabled = true;
+
+            const payload = {
+                sheet: activeSheetName,
+                rows: {}
+            };
+
+            document.querySelectorAll("#table-rows tr").forEach((tr, rowIdx) => {
+                const statusSelect = tr.querySelector(`select[name="status_${rowIdx}"]`);
+                const commentsTextarea = tr.querySelector(`textarea[name="comments_${rowIdx}"]`);
+                const logsTextarea = tr.querySelector(`textarea[name="logs_${rowIdx}"]`);
+
+                if (statusSelect || commentsTextarea || logsTextarea) {
+                    payload.rows[rowIdx] = {};
+                    if (statusSelect) payload.rows[rowIdx].status = statusSelect.value;
+                    if (commentsTextarea) payload.rows[rowIdx].comments = commentsTextarea.value;
+                    if (logsTextarea) payload.rows[rowIdx].logs = logsTextarea.value;
+                }
+            });
+
+            fetch("/api/results/save", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert("💾 Excel file updated successfully!");
+                    loadResultsReport(); // Reload sheet data in UI
+                } else {
+                    alert(`Error saving updates: ${data.error}`);
+                }
+            })
+            .finally(() => {
+                saveBtn.textContent = "💾 Save Edits to Excel";
+                saveBtn.disabled = false;
+            });
+        }
+    </script>
+</body>
+</html>

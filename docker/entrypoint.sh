@@ -114,10 +114,5 @@ echo "════════════════════════�
 echo ""
 
 cd /app
-STREAMLIT_PORT=${PORT:-8501}
-exec streamlit run app_tag_auditor/frontend/app.py \
-    --server.port "$STREAMLIT_PORT" \
-    --server.address 0.0.0.0 \
-    --server.headless true \
-    --server.maxUploadSize 500 \
-    --browser.gatherUsageStats false
+PORT=${PORT:-8501}
+exec python3 app_tag_auditor/frontend/app.py

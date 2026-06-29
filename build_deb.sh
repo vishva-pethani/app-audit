@@ -229,14 +229,9 @@ if curl -sf http://localhost:4723/status > /dev/null 2>&1; then
     echo "Appium server is ready"
 fi
 
-# Start Streamlit
-echo "Starting Streamlit..."
-exec /opt/app-tag-auditor/venv/bin/streamlit run /opt/app-tag-auditor/app_tag_auditor/frontend/app.py \
-    --server.port 8501 \
-    --server.address 0.0.0.0 \
-    --server.headless true \
-    --server.maxUploadSize 500 \
-    --browser.gatherUsageStats false
+# Start Web Server
+echo "Starting App Tag Auditor Server..."
+exec /opt/app-tag-auditor/venv/bin/python /opt/app-tag-auditor/app_tag_auditor/frontend/app.py
 LAUNCHER
 chmod +x "$BUILD_DIR/opt/app-tag-auditor/bin/launcher.sh"
 
