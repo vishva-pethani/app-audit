@@ -5,7 +5,6 @@ Google Drive file input provider for Streamlit.
 Parses a Google Drive URL or File ID directly and resolves metadata.
 """
 import streamlit as st
-import streamlit.components.v1 as components
 import requests
 import re
 from core.config import get_settings
@@ -113,45 +112,6 @@ def render_drive_picker(
 # Google auth button (used for authentication / Sheets URL flow)
 # ---------------------------------------------------------------------------
 
-def _auth_button_html(client_id: str, key: str, label: str) -> str:
-    return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<style>
-  body{{margin:0;padding:0;display:flex;justify-content:center;align-items:flex-start;height:100vh;background:transparent;overflow:hidden;font-family:-apple-system,sans-serif;}}
-  .btn{{background:linear-gradient(135deg,#ff4b4b,#ff8f00);color:#fff;border:none;border-radius:8px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 3px 12px rgba(255,75,75,.4);transition:opacity .15s,transform .15s;}}
-  .btn:hover{{opacity:.9;transform:translateY(-1px);}}
-  .btn:disabled{{background:#2d3748;box-shadow:none;cursor:not-allowed;color:#718096;}}
-</style></head>
-<body>
-<button id="b" class="btn" disabled>Loading…</button>
-<script>
-  const CLIENT_ID="{client_id}";
-  const KEY="{key}";
-  const LABEL={repr(label)};
-  let tc;
-  (function poll(){{
-    if(typeof google!=="undefined"&&google.accounts&&google.accounts.oauth2){{
-      tc=google.accounts.oauth2.initTokenClient({{
-        client_id:CLIENT_ID,
-        scope:"https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets",
-        callback:(r)=>{{
-          if(r&&r.access_token){{
-            const u=new URL("/", window.location.origin);
-            u.searchParams.set("google_auth_token",r.access_token);
-            u.searchParams.set("auth_key",KEY);
-            window.parent.location.replace(u.toString());
-          }} else alert("Auth failed – please try again.");
-        }}
-      }});
-      const b=document.getElementById("b");
-      b.textContent=LABEL;b.disabled=false;
-      b.onclick=()=>tc.requestAccessToken({{prompt:"consent"}});
-    }} else setTimeout(poll,120);
-  }})();
-</script>
-</body></html>
-"""
 
 def render_google_auth(
     key: str = "google_auth",
@@ -159,13 +119,17 @@ def render_google_auth(
     height: int = 80,
 ) -> str | None:
     """Renders an OAuth sign-in button and returns the token once obtained."""
+    import urllib.parse
+
     settings = get_settings()
     client_id = settings.GOOGLE_OAUTH_CLIENT_ID
+    redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI or "http://localhost:8501"
+
     if not client_id or client_id == "your-google-oauth-client-id.apps.googleusercontent.com":
         st.error("⚠️ GOOGLE_OAUTH_CLIENT_ID is not configured.")
         return None
 
-    # Capture callback from redirect
+    # Capture callback from redirect (token-based flow used by _auth_button_html path)
     qp = st.query_params
     if "google_auth_token" in qp:
         target_key = qp.get("auth_key", "google_auth")
@@ -176,5 +140,18 @@ def render_google_auth(
 
     token = st.session_state.get(f"google_auth_token_{key}")
     if not token:
-        components.html(_auth_button_html(client_id, key, label), height=height)
+        # Build standard OAuth authorization-code URL — same approach used on the
+        # login page which is proven reliable in both dev and headless deployments.
+        scopes = "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets"
+        auth_url = (
+            "https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={urllib.parse.quote(client_id)}"
+            f"&redirect_uri={urllib.parse.quote(redirect_uri)}"
+            "&response_type=code"
+            f"&scope={urllib.parse.quote(scopes)}"
+            "&access_type=offline"
+            "&prompt=consent"
+        )
+        st.link_button(f"🔑 {label}", url=auth_url, use_container_width=True)
     return token
+
