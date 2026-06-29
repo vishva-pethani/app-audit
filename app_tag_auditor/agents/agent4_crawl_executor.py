@@ -510,6 +510,32 @@ class CrawlExecutorAgent:
         from appium import webdriver
         from appium.options.android import UiAutomator2Options
 
+        # ── Ensure ANDROID_HOME / ANDROID_SDK_ROOT are available ──────────────
+        # The Appium uiautomator2 driver requires these to locate adb and SDK
+        # tools. When the app is launched via Streamlit directly (not through the
+        # systemd launcher), these vars may not be set in the shell environment.
+        # We resolve the SDK path from: env var → known installation path → system adb.
+        KNOWN_SDK_PATHS = [
+            "/opt/app-tag-auditor/android-sdk",
+            "/usr/lib/android-sdk",
+            os.path.expanduser("~/Android/Sdk"),
+        ]
+        sdk_root = (
+            os.environ.get("ANDROID_HOME")
+            or os.environ.get("ANDROID_SDK_ROOT")
+        )
+        if not sdk_root:
+            for candidate in KNOWN_SDK_PATHS:
+                if os.path.isdir(candidate) and os.path.isdir(os.path.join(candidate, "platform-tools")):
+                    sdk_root = candidate
+                    break
+        if sdk_root:
+            os.environ["ANDROID_HOME"] = sdk_root
+            os.environ["ANDROID_SDK_ROOT"] = sdk_root
+            logger.info(f"Android SDK resolved to: {sdk_root}")
+        else:
+            logger.warning("Could not resolve Android SDK path. ANDROID_HOME not set.")
+
         logger.info(f"Connecting to Appium server at {self.appium_server_url}...")
         options = UiAutomator2Options()
         options.platform_name = "Android"
@@ -519,6 +545,11 @@ class CrawlExecutorAgent:
         options.auto_grant_permissions = True
         options.ignore_hidden_api_policy_error = True
         options.set_capability("appium:ignoreHiddenApiPolicyError", True)
+
+        # Pass the SDK path directly as a capability so the uiautomator2 driver
+        # uses it even if the Appium server process didn't inherit ANDROID_HOME.
+        if sdk_root:
+            options.set_capability("appium:androidSdkPath", sdk_root)
 
         # On normal start: no_reset=True keeps app data (faster).
         # On crash recovery: no_reset=False forces a clean reinstall of the

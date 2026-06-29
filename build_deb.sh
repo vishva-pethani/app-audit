@@ -27,6 +27,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/DEBIAN"
 mkdir -p "$BUILD_DIR/opt/app-tag-auditor/bin"
 mkdir -p "$BUILD_DIR/etc/app-tag-auditor"
+mkdir -p "$BUILD_DIR/etc/profile.d"
 mkdir -p "$BUILD_DIR/etc/systemd/system"
 mkdir -p "$BUILD_DIR/usr/bin"
 mkdir -p "$BUILD_DIR/usr/share/applications"
@@ -138,6 +139,7 @@ APPIUM_SERVER_URL=http://localhost:4723
 ANDROID_HOME=/opt/app-tag-auditor/android-sdk
 ANDROID_SDK_ROOT=/opt/app-tag-auditor/android-sdk
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+APPIUM_HOME=/opt/app-tag-auditor/.appium
 
 # 3. Environment Search Path
 PATH=/opt/app-tag-auditor/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/app-tag-auditor/android-sdk/platform-tools:/opt/app-tag-auditor/android-sdk/cmdline-tools/latest/bin:/opt/app-tag-auditor/android-sdk/build-tools/34.0.0
@@ -145,6 +147,18 @@ ENV_TEMPLATE
 
 chmod 700 "$BUILD_DIR/etc/app-tag-auditor"
 chmod 600 "$BUILD_DIR/etc/app-tag-auditor/app-tag-auditor.env"
+
+# Create profile.d entry for global user environment variables
+echo -e "${BLUE}Writing profile.d environment configuration...${NC}"
+cat > "$BUILD_DIR/etc/profile.d/app-tag-auditor.sh" << 'PROFILE'
+# App Tag Auditor Environment Variables
+export ANDROID_HOME=/opt/app-tag-auditor/android-sdk
+export ANDROID_SDK_ROOT=/opt/app-tag-auditor/android-sdk
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export APPIUM_HOME=/opt/app-tag-auditor/.appium
+export PATH="$PATH:/opt/app-tag-auditor/android-sdk/platform-tools:/opt/app-tag-auditor/android-sdk/cmdline-tools/latest/bin:/opt/app-tag-auditor/android-sdk/build-tools/34.0.0"
+PROFILE
+chmod 644 "$BUILD_DIR/etc/profile.d/app-tag-auditor.sh"
 
 # ── 4. Create Appium/ADB/Streamlit Service Launcher ──────────────────────────
 echo -e "${BLUE}Writing service launcher to /opt/app-tag-auditor/bin/...${NC}"
@@ -173,13 +187,21 @@ fi
 mkdir -p /opt/app-tag-auditor/output /opt/app-tag-auditor/tmp /opt/app-tag-auditor/logs /opt/app-tag-auditor/.sessions
 chmod -R 777 /opt/app-tag-auditor/output /opt/app-tag-auditor/tmp /opt/app-tag-auditor/logs /opt/app-tag-auditor/.sessions
 
+# Ensure Android SDK env vars are explicitly set before starting Appium.
+# Appium's uiautomator2 driver reads ANDROID_HOME from the server process
+# environment at session-creation time — the capability alone is not enough.
+export ANDROID_HOME="${ANDROID_HOME:-/opt/app-tag-auditor/android-sdk}"
+export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/opt/app-tag-auditor/android-sdk}"
+export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/build-tools/34.0.0"
+
 # Start ADB server
 echo "Starting ADB server..."
-adb start-server || true
+"$ANDROID_HOME/platform-tools/adb" start-server 2>/dev/null || adb start-server || true
 
 # Start Appium server in background
 echo "Starting Appium server on port 4723..."
-appium --address 127.0.0.1 --log-level error &
+ANDROID_HOME="$ANDROID_HOME" ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
+    appium --address 127.0.0.1 --log-level error &
 APPIUM_PID=$!
 
 # Ensure cleanup on shutdown
@@ -422,8 +444,8 @@ set -e
 
 # Make sure permissions are correct
 chmod -R 755 /opt/app-tag-auditor
-mkdir -p /opt/app-tag-auditor/output /opt/app-tag-auditor/tmp /opt/app-tag-auditor/logs /opt/app-tag-auditor/.sessions
-chmod -R 777 /opt/app-tag-auditor/output /opt/app-tag-auditor/tmp /opt/app-tag-auditor/logs /opt/app-tag-auditor/.sessions
+mkdir -p /opt/app-tag-auditor/output /opt/app-tag-auditor/tmp /opt/app-tag-auditor/logs /opt/app-tag-auditor/.sessions /opt/app-tag-auditor/.appium
+chmod -R 777 /opt/app-tag-auditor/output /opt/app-tag-auditor/tmp /opt/app-tag-auditor/logs /opt/app-tag-auditor/.sessions /opt/app-tag-auditor/.appium
 
 # Secure env credentials folder and file so they are only readable by root
 chown -R root:root /etc/app-tag-auditor
@@ -463,6 +485,7 @@ export PATH="/opt/app-tag-auditor/node/bin:$PATH"
 
 # 3. Install Appium & UIAutomator2 driver
 echo "=== Installing Appium ==="
+export APPIUM_HOME="/opt/app-tag-auditor/.appium"
 if [ "$NPM_BIN" = "npm" ]; then
     npm install -g appium@latest --unsafe-perm=true
     appium driver install uiautomator2 || true
@@ -470,6 +493,7 @@ else
     "$NPM_BIN" install -g appium@latest --unsafe-perm=true
     /opt/app-tag-auditor/node/bin/appium driver install uiautomator2 || true
 fi
+chmod -R 777 /opt/app-tag-auditor/.appium
 
 # 4. Download and setup JADX
 echo "=== Installing JADX ==="
