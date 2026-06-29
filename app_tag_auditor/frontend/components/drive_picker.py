@@ -1,225 +1,217 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from core.config import get_settings
-from google.oauth2.credentials import Credentials
-from core.drive_client import DriveClient
 import os
 
-def select_file_callback(file_id, file_name, key):
-    st.session_state[f"temp_selected_file_id_{key}"] = file_id
-    st.session_state[f"temp_selected_file_name_{key}"] = file_name
+def get_picker_html(client_id: str, api_key: str, key: str, mime_types: str) -> str:
+    """
+    Generates the HTML/JS markup for the client-side Google Drive Picker with Upload support.
+    """
+    # Vector illustration of Google Drive / Cloud
+    svg_illustration = """
+    <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="#ff8f00" stroke-width="1.5" style="filter: drop-shadow(0 0 12px rgba(255, 143, 0, 0.45));">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linejoin="round" stroke-linecap="round"></path>
+    </svg>
+    """
+    
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <style>
+     body {{
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          background-color: #0e1117;
+          color: #fafafa;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+     }}
+     .card {{
+          background: #1e293b;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 16px;
+          padding: 2.5rem;
+          text-align: center;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+          max-width: 400px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1.5rem;
+     }}
+     .logo {{
+          margin-bottom: 0.5rem;
+     }}
+     .title {{
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin: 0;
+          color: #ffffff;
+     }}
+     .subtitle {{
+          font-size: 0.9rem;
+          color: #8892b0;
+          margin: 0;
+          line-height: 1.5;
+     }}
+     .auth-btn {{
+          background: linear-gradient(135deg, #ff4b4b 0%, #ff8f00 100%);
+          color: white;
+          border: none;
+          padding: 14px 28px;
+          font-size: 15px;
+          font-weight: 600;
+          border-radius: 8px;
+          cursor: pointer;
+          box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4);
+          transition: transform 0.2s, box-shadow 0.2s;
+          width: 100%;
+     }}
+     .auth-btn:hover {{
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(255, 75, 75, 0.6);
+     }}
+     .auth-btn:active {{
+          transform: translateY(1px);
+     }}
+     .auth-btn:disabled {{
+          background: #4a5568;
+          box-shadow: none;
+          cursor: not-allowed;
+          color: #a0aec0;
+     }}
+  </style>
+</head>
+<body>
+  <div class="card">
+      <div class="logo">{svg_illustration}</div>
+      <h2 class="title">Google Drive Picker</h2>
+      <p class="subtitle">Authorize and choose your file from Google Drive, or upload directly using Google's native secure panel.</p>
+      <button id="picker-button" class="auth-btn" disabled>Loading Google APIs...</button>
+  </div>
+  <script>
+    let tokenClient;
+    let accessToken = null;
+    let pickerApiLoaded = false;
+    let gsiLoaded = false;
 
-def refresh_callback(key):
-    st.session_state.pop(f"all_drive_files_{key}", None)
+    function onApiLoad() {{
+        gapi.load('picker', () => {{
+            pickerApiLoaded = true;
+            enableButtonIfReady();
+        }});
+    }}
 
-@st.dialog("Select a file", width="large")
+    window.onload = function() {{
+        if (typeof gapi !== 'undefined') {{
+            onApiLoad();
+        }} else {{
+            let interval = setInterval(() => {{
+                if (typeof gapi !== 'undefined') {{
+                    clearInterval(interval);
+                    onApiLoad();
+                }}
+            }}, 100);
+        }}
+        
+        let gsiInterval = setInterval(() => {{
+            if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {{
+                clearInterval(gsiInterval);
+                gsiLoaded = true;
+                enableButtonIfReady();
+            }}
+        }}, 100);
+    }};
+
+    function enableButtonIfReady() {{
+        const btn = document.getElementById('picker-button');
+        if (pickerApiLoaded && gsiLoaded) {{
+            btn.disabled = false;
+            btn.innerText = "Authorize & Open Picker";
+            
+            tokenClient = google.accounts.oauth2.initTokenClient({{
+                client_id: '{client_id}',
+                scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
+                callback: (tokenResponse) => {{
+                    if (tokenResponse && tokenResponse.access_token) {{
+                        accessToken = tokenResponse.access_token;
+                        createPicker();
+                    }} else {{
+                        console.error("No access token returned", tokenResponse);
+                        alert("Authentication failed. Please try again.");
+                    }}
+                }},
+            }});
+            
+            btn.onclick = () => {{
+                tokenClient.requestAccessToken({{ prompt: 'consent' }});
+            }};
+        }}
+    }}
+
+    function createPicker() {{
+        if (!accessToken) return;
+        
+        const docsView = new google.picker.DocsView()
+            .setMimeTypes('{mime_types}')
+            .setMode(google.picker.DocsViewMode.GRID);
+            
+        const uploadView = new google.picker.DocsUploadView();
+        
+        const picker = new google.picker.PickerBuilder()
+            .addView(docsView)
+            .addView(uploadView)
+            .setOAuthToken(accessToken)
+            .setDeveloperKey('{api_key}')
+            .setCallback(pickerCallback)
+            .setSize(700, 500)
+            .build();
+            
+        picker.setVisible(true);
+    }}
+
+    function pickerCallback(data) {{
+        if (data.action == google.picker.Action.PICKED) {{
+            const doc = data.docs[0];
+            const fileId = doc.id;
+            const fileName = doc.name;
+            
+            const currentUrl = new URL(window.top.location.href);
+            currentUrl.searchParams.set('drive_file_id', fileId);
+            currentUrl.searchParams.set('drive_file_name', fileName);
+            currentUrl.searchParams.set('drive_access_token', accessToken);
+            currentUrl.searchParams.set('picker_key', '{key}');
+            
+            window.top.location.href = currentUrl.toString();
+        }}
+    }}
+  </script>
+</body>
+</html>
+"""
+
+@st.dialog("Google Drive Native Picker", width="large")
 def drive_picker_dialog(mime_types: str, key: str):
     """
-    Renders the Google Drive Picker modal dialog.
+    Renders the dialog box enclosing the Google Picker iframe.
     """
-    token = st.session_state.get("google_auth_token")
-    if not token:
-        st.error("Authentication token is missing. Please sign in again.")
-        if st.button("Close"):
-            st.rerun()
+    settings = get_settings()
+    client_id = settings.GOOGLE_OAUTH_CLIENT_ID
+    api_key = settings.GOOGLE_API_KEY
+    
+    if not client_id or not api_key or client_id == "your-google-oauth-client-id.apps.googleusercontent.com" or api_key == "your-google-api-key":
+        st.error("⚠️ Google OAuth Client ID or API Key is not fully configured in your .env file.")
         return
-
-    # Inject custom stylesheet globally via non-indented st.markdown
-    st.markdown("""
-<style>
-.stTabs [data-baseweb="tab-list"] {
-    gap: 24px !important;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.15) !important;
-}
-.stTabs [data-baseweb="tab"] {
-    height: 44px !important;
-    white-space: pre-wrap !important;
-    font-weight: 600 !important;
-    font-size: 0.95rem !important;
-    color: var(--text-color) !important;
-    opacity: 0.6 !important;
-    background: transparent !important;
-    border: none !important;
-}
-.stTabs [aria-selected="true"] {
-    color: #ff8f00 !important;
-    opacity: 1.0 !important;
-    border-bottom: 2px solid #ff8f00 !important;
-}
-
-.drive-card {
-    background-color: var(--secondary-background-color) !important;
-    border: 1px solid rgba(128, 128, 128, 0.15) !important;
-    border-radius: 12px !important;
-    padding: 16px !important;
-    text-align: center !important;
-    height: 160px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    transition: all 0.2s ease !important;
-}
-.drive-card:hover {
-    background-color: var(--background-color) !important;
-    border-color: #ef4444 !important;
-}
-.drive-card-selected {
-    background-color: rgba(255, 143, 0, 0.12) !important;
-    border: 2px solid #ff8f00 !important;
-    box-shadow: 0 0 16px rgba(255, 143, 0, 0.3) !important;
-}
-.drive-card-title {
-    font-size: 0.85rem !important;
-    font-weight: 600 !important;
-    color: var(--text-color) !important;
-    text-overflow: ellipsis !important;
-    overflow: hidden !important;
-    width: 100% !important;
-    display: -webkit-box !important;
-    -webkit-line-clamp: 2 !important;
-    -webkit-box-orient: vertical !important;
-    line-height: 1.3 !important;
-    margin-top: 8px !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-    tab_drive, tab_upload = st.tabs(["Google Drive", "Upload"])
-
-    with tab_drive:
-        # Search & Refresh Row
-        col_search_input, col_refresh_btn = st.columns([5, 1])
-        search_query = col_search_input.text_input(
-            "Search files", 
-            label_visibility="collapsed", 
-            placeholder="Type file name to search..."
-        )
-        col_refresh_btn.button(
-            "🔄 Refresh", 
-            use_container_width=True, 
-            key=f"ref_btn_{key}",
-            on_click=refresh_callback,
-            args=(key,)
-        )
-
-        # Load files into session state if not cached
-        if f"all_drive_files_{key}" not in st.session_state:
-            try:
-                creds = Credentials(token=token)
-                drive_client = DriveClient(credentials=creds)
-                
-                # Query setup
-                q = "trashed = false"
-                if mime_types:
-                    mimes = [m.strip() for m in mime_types.split(",") if m.strip()]
-                    mime_q = " or ".join([f"mimeType = '{m}'" for m in mimes])
-                    if len(mimes) > 1:
-                        q += f" and ({mime_q})"
-                    else:
-                        q += f" and {mime_q}"
-                
-                with st.spinner("Loading files from Google Drive..."):
-                    files = drive_client.list_files(q=q)
-                    st.session_state[f"all_drive_files_{key}"] = files
-            except Exception as e:
-                st.error(f"Failed to fetch files from Google Drive: {e}")
-                st.session_state[f"all_drive_files_{key}"] = []
-
-        all_files = st.session_state.get(f"all_drive_files_{key}", [])
         
-        # Local filtering
-        if search_query:
-            filtered_files = [f for f in all_files if search_query.lower() in f["name"].lower()]
-        else:
-            filtered_files = all_files
-
-        if not filtered_files:
-            st.markdown(
-                "<div style='text-align: center; padding: 2rem; color: #8892b0;'>No files found matching the search criteria.</div>", 
-                unsafe_allow_html=True
-            )
-        else:
-            selected_file_id = st.session_state.get(f"temp_selected_file_id_{key}")
-            
-            # 4 Columns Grid layout
-            cols_per_row = 4
-            for idx in range(0, len(filtered_files), cols_per_row):
-                row_files = filtered_files[idx:idx + cols_per_row]
-                cols = st.columns(cols_per_row)
-                for col_idx, file_item in enumerate(row_files):
-                    with cols[col_idx]:
-                        file_id = file_item["id"]
-                        file_name = file_item["name"]
-                        
-                        is_selected = (selected_file_id == file_id)
-                        card_class = "drive-card drive-card-selected" if is_selected else "drive-card"
-                        
-                        # SVG Icons based on file type
-                        if file_name.lower().endswith(".apk"):
-                            # Green Android APK icon
-                            icon_svg = """
-                            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#4CAF50" stroke-width="1.5" style="margin-bottom: 12px; filter: drop-shadow(0 0 6px rgba(76, 175, 80, 0.25));">
-                                <rect x="3" y="11" width="18" height="10" rx="2"></rect>
-                                <circle cx="12" cy="5" r="2"></circle>
-                                <path d="M12 7v4" stroke-linecap="round"></path>
-                                <line x1="8" y1="16" x2="8" y2="16" stroke-linecap="round" stroke-width="2.5"></line>
-                                <line x1="16" y1="16" x2="16" y2="16" stroke-linecap="round" stroke-width="2.5"></line>
-                            </svg>
-                            """
-                        else:
-                            # Standard Orange File icon
-                            icon_svg = """
-                            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#ff8f00" stroke-width="1.5" style="margin-bottom: 12px; filter: drop-shadow(0 0 6px rgba(255, 143, 0, 0.25));">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="16" y1="13" x2="8" y2="13"></line>
-                                <line x1="16" y1="17" x2="8" y2="17"></line>
-                            </svg>
-                            """
-                        
-                        # Render Card
-                        st.markdown(f"""<div class="{card_class}">{icon_svg}<div class="drive-card-title">{file_name}</div></div>""", unsafe_allow_html=True)
-                        st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
-                        
-                        btn_label = "✓ Selected" if is_selected else "Select"
-                        btn_type = "primary" if is_selected else "secondary"
-                        st.button(
-                            btn_label, 
-                            key=f"sel_btn_{file_id}", 
-                            use_container_width=True, 
-                            type=btn_type,
-                            on_click=select_file_callback,
-                            args=(file_id, file_name, key)
-                        )
-
-        # Dialog Action Buttons
-        st.markdown("<hr style='margin: 1.5rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
-        col_actions_l, col_actions_r = st.columns([1, 1])
-        with col_actions_l:
-            if st.button("Cancel", use_container_width=True, key=f"cancel_dialog_{key}"):
-                st.session_state.pop(f"temp_selected_file_id_{key}", None)
-                st.session_state.pop(f"temp_selected_file_name_{key}", None)
-                st.rerun()
-        with col_actions_r:
-            temp_id = st.session_state.get(f"temp_selected_file_id_{key}")
-            temp_name = st.session_state.get(f"temp_selected_file_name_{key}")
-            if st.button("Select", use_container_width=True, disabled=not temp_id, type="primary", key=f"confirm_dialog_{key}"):
-                st.session_state[f"drive_selection_{key}"] = {
-                    "file_id": temp_id,
-                    "file_name": temp_name,
-                    "access_token": token
-                }
-                st.session_state.pop(f"temp_selected_file_id_{key}", None)
-                st.session_state.pop(f"temp_selected_file_name_{key}", None)
-                st.rerun()
-
-    with tab_upload:
-        st.markdown("<div style='padding: 1.5rem 0;'></div>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload directly to Google Drive", type=["apk"])
-        if uploaded_file:
-            # Future expansion
-            st.info("Local upload is ready. Click on the 'Local Upload' radio button on the dashboard sidebar to use it directly.")
+    picker_html = get_picker_html(client_id, api_key, key, mime_types)
+    components.html(picker_html, height=580)
 
 def render_drive_picker(
     key: str = "apk",
@@ -229,21 +221,20 @@ def render_drive_picker(
     token: str = ""
 ) -> dict | None:
     """
-    Renders a Google Drive picker selector button. When clicked, opens a premium dialog
-    containing the file picker explorer.
+    Renders the selector controller on the dashboard page.
     """
-    settings = get_settings()
-    client_id = settings.GOOGLE_OAUTH_CLIENT_ID
-
-    # Check if Google Credentials are set
-    if (not client_id 
-        or client_id == "your-google-oauth-client-id.apps.googleusercontent.com"):
-        
-        st.error(
-            "⚠️ Google Cloud Credentials not fully configured. "
-            "Please make sure GOOGLE_OAUTH_CLIENT_ID is correctly set in your .env file."
-        )
-        return None
+    # Parse query parameters first
+    query_params = st.query_params
+    if "drive_file_id" in query_params and "drive_file_name" in query_params and "drive_access_token" in query_params:
+        target_key = query_params.get("picker_key", "apk")
+        st.session_state[f"drive_selection_{target_key}"] = {
+            "file_id": query_params["drive_file_id"],
+            "file_name": query_params["drive_file_name"],
+            "access_token": query_params["drive_access_token"]
+        }
+        st.session_state["google_auth_token"] = query_params["drive_access_token"]
+        st.query_params.clear()
+        st.rerun()
 
     # Get selection
     selection = st.session_state.get(f"drive_selection_{key}")
@@ -253,21 +244,50 @@ def render_drive_picker(
         selection["access_token"] = token
         st.session_state[f"drive_selection_{key}"] = selection
 
-    # Style and render selector control
-    st.markdown(f'<div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.75rem;"><div style="font-size: 0.9rem; font-weight: 500; color: #8892b0;">Select APK file stored in Google Drive</div></div>', unsafe_allow_html=True)
-    
-    col_btn, col_info = st.columns([2, 3])
-    
-    with col_btn:
-        button_lbl = "📂 Pick from Drive" if not selection else "🔄 Change File"
-        if st.button(button_lbl, key=f"open_dialog_trigger_{key}", use_container_width=True):
-            drive_picker_dialog(mime_types, key)
-            
-    with col_info:
-        if selection:
-            st.success(f"✓ `{selection['file_name']}`")
-        else:
-            st.info("No file selected.")
+    # Style
+    st.markdown("""
+<style>
+.drive-selector-box {
+    background-color: var(--secondary-background-color) !important;
+    border: 1px solid rgba(128, 128, 128, 0.15) !important;
+    border-radius: 12px !important;
+    padding: 1.25rem !important;
+    margin-bottom: 1rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown(f"""
+        <div class="drive-selector-box">
+            <div style="font-size: 0.9rem; font-weight: 500; color: #8892b0; margin-bottom: 0.75rem;">Select file from Google Drive / Cloud</div>
+        """, unsafe_allow_html=True)
+        
+        col_btn, col_info = st.columns([2, 3])
+        
+        with col_btn:
+            button_lbl = "📂 Open Google Picker" if not selection else "🔄 Change File"
+            if st.button(button_lbl, key=f"open_dialog_trigger_{key}", use_container_width=True, type="primary" if not selection else "secondary"):
+                if selection:
+                    # Reset selection
+                    st.session_state.pop(f"drive_selection_{key}", None)
+                    st.rerun()
+                else:
+                    drive_picker_dialog(mime_types, key)
+                    
+        with col_info:
+            if selection:
+                st.markdown(f"""
+                <div style="background: rgba(46, 204, 113, 0.05); border: 1px solid #2ecc71; border-radius: 8px; padding: 6px 12px; display: inline-block;">
+                    <span style="color: #2ecc71; font-weight: 600; font-size: 0.9rem;">✓ {selection['file_name']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="padding: 6px 0; color: #8892b0; font-size: 0.9rem;">No file selected.</div>
+                """, unsafe_allow_html=True)
+                
+        st.markdown("</div>", unsafe_allow_html=True)
 
     return selection
 
@@ -286,7 +306,7 @@ def get_auth_html(client_id: str, key: str, label: str) -> str:
           align-items: flex-start;
           height: 100vh;
           background: transparent;
-          font-family: 'Outfit', sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
           overflow: hidden;
      }}
      .auth-btn {{
@@ -337,7 +357,7 @@ def get_auth_html(client_id: str, key: str, label: str) -> str:
         
         tokenClient = google.accounts.oauth2.initTokenClient({{
             client_id: '{client_id}',
-            scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+            scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
             callback: (tokenResponse) => {{
                 if (tokenResponse && tokenResponse.access_token) {{
                     const currentUrl = new URL(window.top.location.href);

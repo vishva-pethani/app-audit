@@ -44,7 +44,7 @@ class DriveClient:
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {token}"}
             
-            with requests.get(download_url, headers=headers, stream=True) as response:
+            with requests.get(download_url, headers=headers, stream=True, timeout=30) as response:
                 if response.status_code != 200:
                     raise Exception(f"Failed to download file {file_id}: HTTP {response.status_code} - {response.text}")
                 
@@ -58,7 +58,7 @@ class DriveClient:
         except Exception as e:
             logger.error(f"Failed to download file '{file_id}': {e}")
             raise
-
+ 
     def list_files(self, q: str = None) -> list:
         """
         Lists files from Google Drive matching the query.
@@ -84,7 +84,7 @@ class DriveClient:
             if q:
                 params["q"] = q
                 
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code == 200:
                 return response.json().get("files", [])
             else:
