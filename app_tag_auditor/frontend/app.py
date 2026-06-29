@@ -137,7 +137,7 @@ def index():
 @app.route("/api/profile", methods=["GET"])
 def get_profile():
     if not session.get("authenticated"):
-        return jsonify({"authenticated": False}), 401
+        return jsonify({"authenticated": False, "profile": None})
     check_token_refresh()
     return jsonify({
         "authenticated": True,
