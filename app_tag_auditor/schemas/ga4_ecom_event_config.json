@@ -1,0 +1,33 @@
+{
+  "item_param_types": {
+    "item_id": "string", "item_name": "string", "affiliation": "string", "coupon": "string",
+    "discount": "number", "index": "number", "item_brand": "string", "item_category": "string",
+    "item_category2": "string", "item_category3": "string", "item_category4": "string", "item_category5": "string",
+    "item_list_id": "string", "item_list_name": "string", "item_variant": "string", "location_id": "string",
+    "price": "number", "google_business_vertical": "string", "quantity": "number",
+    "promotion_id": "string", "promotion_name": "string"
+  },
+  "required_item_params": ["item_id", "item_name", "price", "quantity"],
+  "event_param_types": {
+    "currency": "string", "value": "number", "item_list_id": "string", "item_list_name": "string",
+    "coupon": "string", "shipping_tier": "string", "payment_type": "string", "transaction_id": "string",
+    "tax": "number", "shipping": "number", "customer_type": "string", "creative_name": "string",
+    "creative_slot": "string", "promotion_id": "string", "promotion_name": "string"
+  },
+  "events": [
+    {"event_name": "view_item_list", "user_action": "User is presented with a list of results/products", "event_params": ["currency", "item_list_id", "item_list_name"], "min_items": 1},
+    {"event_name": "select_item", "user_action": "User selects an item from a list", "event_params": ["currency", "item_list_id", "item_list_name"], "min_items": 1},
+    {"event_name": "view_item", "user_action": "User views an item's detail screen", "event_params": ["currency", "value"], "min_items": 1},
+    {"event_name": "add_to_cart", "user_action": "User adds an item to the shopping cart", "event_params": ["currency", "value"], "min_items": 1},
+    {"event_name": "add_to_wishlist", "user_action": "User adds an item to their wishlist", "event_params": ["currency", "value"], "min_items": 1},
+    {"event_name": "view_cart", "user_action": "User views the shopping cart", "event_params": ["currency", "value"], "min_items": 1},
+    {"event_name": "remove_from_cart", "user_action": "User removes an item from the cart", "event_params": ["currency", "value"], "min_items": 1},
+    {"event_name": "begin_checkout", "user_action": "User initiates the checkout process", "event_params": ["currency", "value", "coupon"], "min_items": 1},
+    {"event_name": "add_shipping_info", "user_action": "User adds shipping information during checkout", "event_params": ["currency", "value", "coupon", "shipping_tier"], "min_items": 1},
+    {"event_name": "add_payment_info", "user_action": "User submits payment information", "event_params": ["currency", "value", "coupon", "payment_type"], "min_items": 1},
+    {"event_name": "purchase", "user_action": "User completes checkout and payment succeeds", "event_params": ["transaction_id", "value", "tax", "shipping", "currency", "coupon", "customer_type"], "min_items": 1},
+    {"event_name": "refund", "user_action": "User's order is refunded", "event_params": ["currency", "transaction_id", "value", "coupon", "shipping", "tax"], "min_items": 1},
+    {"event_name": "view_promotion", "user_action": "User is shown an internal promotion (e.g. a banner)", "event_params": ["currency", "creative_name", "creative_slot", "promotion_id", "promotion_name"], "min_items": 1},
+    {"event_name": "select_promotion", "user_action": "User clicks/taps an internal promotion", "event_params": ["currency", "creative_name", "creative_slot", "promotion_id", "promotion_name"], "min_items": 1}
+  ]
+}

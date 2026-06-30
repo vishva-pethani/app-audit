@@ -84,3 +84,36 @@ class FinalAuditRow(BaseModel):
     overall_status: Literal["PASS", "FAIL", "PARTIAL"]
     details: str
     timestamp: str
+
+
+class ExpectedEcomEvent(BaseModel):
+    event_name: str
+    user_action: str
+    event_param_names: list[str]
+    required_item_param_names: list[str]
+    min_items: int
+    keywords: list[str]
+
+
+class CapturedEcomLog(BaseModel):
+    event_name: str
+    top_level_params: dict
+    items: list[dict]
+    timestamp: str
+    source: Literal["logcat"]
+
+
+class EcomTelemetryValidationResult(BaseModel):
+    event_name: str
+    passed: bool
+    missing_event_keys: list[str]
+    extra_event_keys: list[str]
+    mismatched_event_keys: list[str]
+    item_count_found: int
+    item_count_expected_min: int
+    item_count_passed: bool
+    items_with_missing_keys: list[dict]
+    items_with_type_errors: list[dict]
+    items_with_custom_params: list[dict]
+    items_with_discount_revenue_errors: list[dict]
+
