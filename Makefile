@@ -41,3 +41,11 @@ appium-status:
 ## Container health / status
 status:
 	docker compose ps
+
+## Run Electron development mode
+electron-dev:
+	cd app_tag_auditor/electron-app && npm run dev
+
+## Build and package Electron app
+electron-build:
+	cd app_tag_auditor/electron-app && npm run package

@@ -1,6 +1,11 @@
 # Environment variables
 .env
 .env.example
+node_modules
+.vscode
+squashfs-root
+dist
+dist-packaged
 
 # Credentials / Secrets
 client_secrets.json

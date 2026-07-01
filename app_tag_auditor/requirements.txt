@@ -9,3 +9,4 @@ openpyxl
 Appium-Python-Client>=3.0.0
 requests
 pandas
+flask-cors

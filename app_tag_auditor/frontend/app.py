@@ -21,7 +21,10 @@ from core.sheets_client import SheetsClient
 from google.oauth2.credentials import Credentials
 from orchestrator import run_pipeline
 
+from flask_cors import CORS
+
 app = Flask(__name__, template_folder='templates')
+CORS(app, supports_credentials=True)
 app.secret_key = os.urandom(24)
 
 # Global variables for tracking the running pipeline

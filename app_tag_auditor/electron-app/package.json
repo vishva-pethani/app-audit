@@ -1,0 +1,46 @@
+{
+  "name": "app-tag-auditor-desktop",
+  "version": "1.0.0",
+  "description": "App Tag Auditor Desktop App Shell",
+  "author": "Tatvic Analyst <analyst@tatvic.com>",
+  "homepage": "https://github.com/tatvic/app-tag-auditor",
+  "main": "dist/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.json",
+    "build:renderer": "cd renderer && npm run build",
+    "build": "npm run build:main && npm run build:renderer",
+    "dev:main": "tsc -p tsconfig.json && electron dist/main.js",
+    "dev": "concurrently \"cd renderer && npm run dev\" \"wait-on http://localhost:3000 && npm run dev:main\"",
+    "package": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.jotarostrategy.apptagauditor",
+    "productName": "App Tag Auditor",
+    "directories": {
+      "output": "dist-packaged"
+    },
+    "asar": false,
+    "files": [
+      "dist/**/*",
+      "renderer/out/**/*",
+      "../agents/**/*",
+      "../core/**/*",
+      "../frontend/**/*",
+      "../schemas/**/*",
+      "../requirements.txt"
+    ],
+    "linux": {
+      "target": ["deb", "AppImage"],
+      "category": "Development"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "wait-on": "^7.2.0"
+  }
+}
