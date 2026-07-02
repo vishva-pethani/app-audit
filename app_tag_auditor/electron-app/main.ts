@@ -97,6 +97,9 @@ function createWindow() {
     }
   });
 
+  // Override user agent to bypass Google OAuth embedded browser block
+  mainWindow.webContents.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+
   // Handle external links (e.g. download results link) using the system default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://localhost:8501/api/results/download') || !url.startsWith('http://localhost')) {
