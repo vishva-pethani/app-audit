@@ -5,7 +5,7 @@ set -e
 # Export a robust PATH environment variable since dpkg runs postinst with a minimal PATH
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-APP_DIR="/opt/App Tag Auditor/resources/app"
+APP_DIR="/opt/AppTagAuditor/resources/app"
 echo "=== App Tag Auditor Post-Install Setup ==="
 echo "Target directory: $APP_DIR"
 
@@ -102,8 +102,8 @@ udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
 
 # 8. Set generic permissions for all compiled files
-chmod -R 755 "/opt/App Tag Auditor"
-chmod 4755 "/opt/App Tag Auditor/chrome-sandbox"
+chmod -R 755 "/opt/AppTagAuditor"
+chmod 4755 "/opt/AppTagAuditor/chrome-sandbox"
 chmod -R 777 /opt/app-tag-auditor || true
 
 echo "=== Post-Install Setup Completed Successfully ==="

@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.jotarostrategy.apptagauditor",
-    "productName": "App Tag Auditor",
+    "productName": "AppTagAuditor",
     "directories": {
       "output": "dist-packaged"
     },
@@ -23,11 +23,11 @@
     "files": [
       "dist/**/*",
       "renderer/out/**/*",
-      "../agents/**/*",
-      "../core/**/*",
-      "../frontend/**/*",
-      "../schemas/**/*",
-      "../requirements.txt"
+      { "from": "../agents", "to": "agents" },
+      { "from": "../core", "to": "core" },
+      { "from": "../frontend", "to": "frontend" },
+      { "from": "../schemas", "to": "schemas" },
+      { "from": "..", "to": ".", "filter": ["requirements.txt"] }
     ],
     "linux": {
       "target": ["deb", "AppImage"],
