@@ -5,8 +5,11 @@ import { spawn, ChildProcess } from 'child_process';
 let mainWindow: BrowserWindow | null = null;
 let flaskProcess: ChildProcess | null = null;
 
-// ── Spawn Flask Python Backend ────────────────────────────────────────────────
-function startFlaskBackend() {
+let appiumProcess: ChildProcess | null = null;
+let adbProcess: ChildProcess | null = null;
+
+// ── Spawn ADB, Appium, and Flask Python Backend ────────────────────────────────
+function startServices() {
   const isProd = app.isPackaged;
   const appPath = app.getAppPath();
   // In production (ASAR disabled), appPath is resources/app/, where frontend/app.py is copied directly.
@@ -14,11 +17,52 @@ function startFlaskBackend() {
   const workingDir = isProd ? appPath : path.resolve(appPath, '..');
   const pythonScript = path.join(workingDir, 'frontend', 'app.py');
 
-  console.log(`Spawning Python process: python3 ${pythonScript} (Cwd: ${workingDir})`);
+  // Resolve paths for production env
+  const pythonExecutable = isProd ? path.join(workingDir, 'venv', 'bin', 'python3') : 'python3';
+  const androidHome = isProd ? path.join(workingDir, 'android-sdk') : (process.env.ANDROID_HOME || '/opt/android-sdk');
+  const adbPath = isProd ? path.join(androidHome, 'platform-tools', 'adb') : 'adb';
+  const venvBin = isProd ? path.join(workingDir, 'venv', 'bin') : '';
+  const jadxBin = isProd ? path.join(workingDir, 'jadx', 'bin') : '';
 
-  flaskProcess = spawn('python3', [pythonScript], {
+  // Setup environment variables
+  const env: any = { 
+    ...process.env, 
+    PYTHONUNBUFFERED: '1',
+    ANDROID_HOME: androidHome,
+    ANDROID_SDK_ROOT: androidHome
+  };
+
+  if (isProd) {
+    const platformTools = path.join(androidHome, 'platform-tools');
+    env.PATH = `${venvBin}:${platformTools}:${jadxBin}:${process.env.PATH}`;
+  }
+
+  // 1. Spawn ADB start-server
+  console.log(`Spawning ADB: ${adbPath} start-server (Cwd: ${workingDir})`);
+  adbProcess = spawn(adbPath, ['start-server'], { env });
+  adbProcess.on('close', (code) => {
+    console.log(`ADB start-server completed with code ${code}`);
+  });
+
+  // 2. Spawn Appium
+  console.log(`Spawning Appium on port 4723 (Cwd: ${workingDir})`);
+  appiumProcess = spawn('appium', ['--address', '127.0.0.1', '--log-level', 'error'], { env });
+  
+  appiumProcess.stdout?.on('data', (data) => {
+    console.log(`[Appium Stdout]: ${data}`);
+  });
+  appiumProcess.stderr?.on('data', (data) => {
+    console.error(`[Appium Stderr]: ${data}`);
+  });
+  appiumProcess.on('close', (code) => {
+    console.log(`Appium process exited with code ${code}`);
+  });
+
+  // 3. Spawn Flask python process
+  console.log(`Spawning Python process: ${pythonExecutable} ${pythonScript} (Cwd: ${workingDir})`);
+  flaskProcess = spawn(pythonExecutable, [pythonScript], {
     cwd: workingDir,
-    env: { ...process.env, PYTHONUNBUFFERED: '1' }
+    env
   });
 
   flaskProcess.stdout?.on('data', (data) => {
@@ -77,8 +121,11 @@ function createWindow() {
   });
 }
 
+app.commandLine.appendSwitch("no-sandbox");
+app.commandLine.appendSwitch("disable-setuid-sandbox");
+
 app.on('ready', () => {
-  startFlaskBackend();
+  startServices();
   createWindow();
 });
 
@@ -93,4 +140,17 @@ app.on('quit', () => {
     console.log('Terminating Python process...');
     flaskProcess.kill();
   }
+  if (appiumProcess) {
+    console.log('Terminating Appium process...');
+    appiumProcess.kill();
+  }
+  
+  // Shut down ADB server in production to release USB device lock
+  const isProd = app.isPackaged;
+  const appPath = app.getAppPath();
+  const workingDir = isProd ? appPath : path.resolve(appPath, '..');
+  const androidHome = isProd ? path.join(workingDir, 'android-sdk') : (process.env.ANDROID_HOME || '/opt/android-sdk');
+  const adbPath = isProd ? path.join(androidHome, 'platform-tools', 'adb') : 'adb';
+  console.log('Stopping ADB server...');
+  spawn(adbPath, ['kill-server']);
 });

@@ -32,6 +32,23 @@
     "linux": {
       "target": ["deb", "AppImage"],
       "category": "Development"
+    },
+    "deb": {
+      "depends": [
+        "python3",
+        "python3-pip",
+        "python3-venv",
+        "openjdk-17-jre-headless",
+        "android-tools-adb",
+        "udev",
+        "nodejs",
+        "npm",
+        "curl",
+        "wget",
+        "unzip"
+      ],
+      "afterInstall": "build/after-install.sh",
+      "afterRemove": "build/after-remove.sh"
     }
   },
   "devDependencies": {
