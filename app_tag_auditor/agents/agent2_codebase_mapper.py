@@ -131,13 +131,127 @@ class CodebaseMapperAgent:
         )
 
     def run(self, expected_events: list[ExpectedEvent]) -> list[CodeLocation]:
-        """Maps all expected events to their locations in the source files."""
+        """Maps all expected events to their locations in the source files in a single pass."""
+        event_by_name = {e.event_name: e for e in expected_events}
+        event_names = list(event_by_name.keys())
+        
+        from collections import defaultdict
+        kw_to_events = defaultdict(list)
+        for e in expected_events:
+            for kw in e.keywords:
+                kw_to_events[kw.lower()].append(e)
+                
+        # Pre-compile regex patterns for fast matching
+        import re
+        pattern = None
+        if event_names:
+            pattern = re.compile(r'"(' + '|'.join(re.escape(name) for name in event_names) + r')"')
+            
+        kw_pattern = None
+        if kw_to_events:
+            kw_pattern = re.compile(r'\b(' + '|'.join(re.escape(kw) for kw in kw_to_events.keys()) + r')\b', re.IGNORECASE)
+            
+        best_matches = {} # event_name -> (path, line_idx, matched_count, lines)
+        fallback_matches = {} # event_name -> (path, line_idx, snippet, breadcrumb)
+        
+        for path in self._iter_java_files():
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+            except Exception:
+                continue
+                
+            matched_events = set()
+            if pattern:
+                matched_events = set(pattern.findall(content))
+                
+            matched_kws = set()
+            if kw_pattern:
+                matched_kws = {kw.lower() for kw in kw_pattern.findall(content)}
+                
+            if not matched_events and not matched_kws:
+                continue
+                
+            lines = content.splitlines()
+            
+            # 1. Process exact matches
+            if matched_events:
+                for idx, line in enumerate(lines):
+                    for name in matched_events:
+                        target_literal = f'"{name}"'
+                        if target_literal in line:
+                            event = event_by_name[name]
+                            start_idx = max(0, idx - 15)
+                            end_idx = min(len(lines) - 1, idx + 15)
+                            window_content = "\n".join(lines[start_idx:end_idx + 1])
+                            
+                            matched_count = sum(
+                                1 for param in event.expected_params
+                                if f'"{param.param_name}"' in window_content
+                            )
+                            
+                            current_best = best_matches.get(name)
+                            if current_best is None or matched_count > current_best[2]:
+                                best_matches[name] = (path, idx, matched_count, lines)
+                                
+            # 2. Process fallback matches
+            if matched_kws:
+                for idx, line in enumerate(lines):
+                    line_lower = line.lower()
+                    for kw in matched_kws:
+                        if kw in line_lower:
+                            for event in kw_to_events[kw]:
+                                if event.event_name not in best_matches and event.event_name not in fallback_matches:
+                                    enclosing_class = self._find_enclosing_class(lines, idx)
+                                    enclosing_method = self._find_enclosing_method(lines, idx)
+                                    fallback_matches[event.event_name] = (path, idx, line.strip(), [enclosing_class, enclosing_method])
+                                    
+        # Build final CodeLocation results list
         results = []
         for event in expected_events:
-            loc = self.map_event(event)
-            if loc.confidence == 0.0:
-                logger.warning(f"Could not map event '{event.event_name}' in codebase (confidence 0.0).")
-            results.append(loc)
+            name = event.event_name
+            if name in best_matches:
+                path, idx, matched_count, lines = best_matches[name]
+                total_params = len(event.expected_params)
+                if total_params == 0:
+                    confidence = 1.0
+                elif matched_count == total_params:
+                    confidence = 1.0
+                else:
+                    confidence = 0.5 + 0.5 * (matched_count / total_params)
+                    
+                enclosing_class = self._find_enclosing_class(lines, idx)
+                enclosing_method = self._find_enclosing_method(lines, idx)
+                
+                results.append(CodeLocation(
+                    event_name=name,
+                    file_path=str(path),
+                    line_number=idx + 1,
+                    matched_snippet=lines[idx].strip(),
+                    breadcrumb=[enclosing_class, enclosing_method],
+                    confidence=confidence
+                ))
+            elif name in fallback_matches:
+                path, idx, snippet, breadcrumb = fallback_matches[name]
+                results.append(CodeLocation(
+                    event_name=name,
+                    file_path=str(path),
+                    line_number=idx + 1,
+                    matched_snippet=snippet,
+                    breadcrumb=breadcrumb,
+                    confidence=0.3
+                ))
+            else:
+                logger.warning(f"Could not map event '{name}' in codebase (confidence 0.0).")
+                results.append(CodeLocation(
+                    event_name=name,
+                    file_path="",
+                    line_number=0,
+                    matched_snippet="",
+                    breadcrumb=[],
+                    confidence=0.0
+                ))
+                
         return results
 
 if __name__ == "__main__":
