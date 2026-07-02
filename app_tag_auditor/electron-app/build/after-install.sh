@@ -2,6 +2,9 @@
 # after-install.sh — Post-install script for App Tag Auditor deb package
 set -e
 
+# Export a robust PATH environment variable since dpkg runs postinst with a minimal PATH
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 APP_DIR="/opt/App Tag Auditor/resources/app"
 echo "=== App Tag Auditor Post-Install Setup ==="
 echo "Target directory: $APP_DIR"
@@ -18,32 +21,37 @@ export APPIUM_HOME="$APP_DIR/.appium"
 mkdir -p "$APPIUM_HOME"
 chmod -R 777 "$APPIUM_HOME"
 npm install -g appium@latest --unsafe-perm=true || true
-appium driver install uiautomator2 || true
+APPIUM_BIN="$(npm config get prefix)/bin/appium"
+"$APPIUM_BIN" driver install uiautomator2 || true
 
-# 3. Install JADX
+# 3. Install JADX (in a path without spaces to avoid Java execution class loader errors)
 echo "--- Installing JADX decompiler ---"
 JADX_VERSION="1.5.0"
-JADX_DIR="$APP_DIR/jadx"
-if [ ! -f "$JADX_DIR/bin/jadx" ]; then
-    mkdir -p "$JADX_DIR"
+JADX_ROOT="/opt/app-tag-auditor/jadx"
+if [ ! -f "$JADX_ROOT/bin/jadx" ]; then
+    mkdir -p "$JADX_ROOT"
     wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip
-    unzip -q /tmp/jadx.zip -d "$JADX_DIR"
-    chmod +x "$JADX_DIR/bin/jadx"
+    unzip -q /tmp/jadx.zip -d "$JADX_ROOT"
+    chmod +x "$JADX_ROOT/bin/jadx"
     rm -f /tmp/jadx.zip
 fi
+# Create symlink inside the app resources folder
+ln -sfn "$JADX_ROOT" "$APP_DIR/jadx"
 
-# 4. Install Android SDK (platform-tools only, lean container footprint design)
+# 4. Install Android SDK (platform-tools only, installed in a path without spaces)
 echo "--- Installing Android platform-tools ---"
-ANDROID_HOME="$APP_DIR/android-sdk"
-if [ ! -d "$ANDROID_HOME/platform-tools" ]; then
-    mkdir -p "$ANDROID_HOME/cmdline-tools"
+ANDROID_ROOT="/opt/app-tag-auditor/android-sdk"
+if [ ! -d "$ANDROID_ROOT/platform-tools" ]; then
+    mkdir -p "$ANDROID_ROOT/cmdline-tools"
     wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -O /tmp/cmdline-tools.zip
-    unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools"
-    mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+    unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_ROOT/cmdline-tools"
+    mv "$ANDROID_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_ROOT/cmdline-tools/latest"
     rm -f /tmp/cmdline-tools.zip
     # Use sdkmanager to install platform-tools only (excluding build-tools)
-    yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "platform-tools"
+    yes | "$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_ROOT" "platform-tools"
 fi
+# Create symlink inside the app resources folder
+ln -sfn "$ANDROID_ROOT" "$APP_DIR/android-sdk"
 
 # 5. Create dynamic output, temp, logs, and sessions directories
 echo "--- Creating runtime directories ---"
@@ -95,5 +103,6 @@ udevadm trigger 2>/dev/null || true
 
 # 8. Set generic permissions for all compiled files
 chmod -R 755 "/opt/App Tag Auditor"
+chmod -R 777 /opt/app-tag-auditor || true
 
 echo "=== Post-Install Setup Completed Successfully ==="
