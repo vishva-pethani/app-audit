@@ -108,7 +108,7 @@ function createWindow() {
 
   // Load the web app
   if (app.isPackaged) {
-    mainWindow.loadURL('app://index.html');
+    mainWindow.loadURL('app:///index.html');
   } else {
     mainWindow.loadURL('http://localhost:3000');
   }
@@ -134,19 +134,21 @@ app.commandLine.appendSwitch("disable-dev-shm-usage");
 app.on('ready', () => {
   // Register custom app:// protocol to serve Next.js static files correctly in production
   protocol.handle('app', (request) => {
-    let urlPath = request.url.slice('app://'.length);
+    // Parse using URL class to strip host and query params cleanly
+    const parsedUrl = new URL(request.url);
+    let filePath = parsedUrl.pathname;
     
     // Remove trailing slash if present
-    if (urlPath.endsWith('/')) {
-      urlPath = urlPath.slice(0, -1);
+    if (filePath.endsWith('/')) {
+      filePath = filePath.slice(0, -1);
     }
     
-    let filePath = urlPath;
-    if (filePath === '' || filePath === 'index.html') {
-      filePath = 'index.html';
+    if (filePath === '' || filePath === '/index.html') {
+      filePath = '/index.html';
     }
     
     const staticPath = path.join(__dirname, '../renderer/out');
+    // path.join handles the leading slash in filePath automatically
     let resolvedPath = path.join(staticPath, filePath);
     
     try {
