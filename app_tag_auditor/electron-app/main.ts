@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, protocol, net } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { pathToFileURL } from 'url';
+import * as fs from 'fs';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
@@ -128,17 +129,34 @@ function createWindow() {
 
 app.commandLine.appendSwitch("no-sandbox");
 app.commandLine.appendSwitch("disable-setuid-sandbox");
+app.commandLine.appendSwitch("disable-dev-shm-usage");
 
 app.on('ready', () => {
   // Register custom app:// protocol to serve Next.js static files correctly in production
   protocol.handle('app', (request) => {
-    const urlPath = request.url.slice('app://'.length);
+    let urlPath = request.url.slice('app://'.length);
+    
+    // Remove trailing slash if present
+    if (urlPath.endsWith('/')) {
+      urlPath = urlPath.slice(0, -1);
+    }
+    
     let filePath = urlPath;
-    if (filePath === '' || filePath === '/') {
+    if (filePath === '' || filePath === 'index.html') {
       filePath = 'index.html';
     }
+    
     const staticPath = path.join(__dirname, '../renderer/out');
-    const resolvedPath = path.join(staticPath, filePath);
+    let resolvedPath = path.join(staticPath, filePath);
+    
+    try {
+      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+        resolvedPath = path.join(resolvedPath, 'index.html');
+      }
+    } catch (e) {
+      console.error('Error checking directory for path:', resolvedPath, e);
+    }
+
     return net.fetch(pathToFileURL(resolvedPath).toString());
   });
 

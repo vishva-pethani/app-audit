@@ -106,4 +106,11 @@ chmod -R 755 "/opt/AppTagAuditor"
 chmod 4755 "/opt/AppTagAuditor/chrome-sandbox"
 chmod -R 777 /opt/app-tag-auditor || true
 
+# 9. Set permissions for dynamic runtime directories and files
+chmod -R 777 "$APP_DIR/output" "$APP_DIR/tmp" "$APP_DIR/logs" "$APP_DIR/.sessions" || true
+find "$APP_DIR/logs" -type f -exec chmod 666 {} + || true
+find "$APP_DIR/output" -type f -exec chmod 666 {} + || true
+find "$APP_DIR/tmp" -type f -exec chmod 666 {} + || true
+find "$APP_DIR/.sessions" -type f -exec chmod 666 {} + || true
+
 echo "=== Post-Install Setup Completed Successfully ==="
