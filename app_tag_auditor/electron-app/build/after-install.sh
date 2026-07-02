@@ -103,6 +103,7 @@ udevadm trigger 2>/dev/null || true
 
 # 8. Set generic permissions for all compiled files
 chmod -R 755 "/opt/App Tag Auditor"
+chmod 4755 "/opt/App Tag Auditor/chrome-sandbox"
 chmod -R 777 /opt/app-tag-auditor || true
 
 echo "=== Post-Install Setup Completed Successfully ==="
