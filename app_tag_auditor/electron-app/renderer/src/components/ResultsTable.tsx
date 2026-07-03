@@ -9,6 +9,40 @@ interface ResultsTableProps {
   onRefresh: () => void;
 }
 
+function AutoResizeTextarea({
+  value,
+  onChange,
+  className,
+  style,
+  placeholder,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
+  placeholder?: string;
+}) {
+  const adjustHeight = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  return (
+    <textarea
+      className={className}
+      style={{ ...style, overflowY: 'hidden' }}
+      value={value}
+      placeholder={placeholder}
+      ref={adjustHeight}
+      onChange={(e) => {
+        onChange(e.target.value);
+        adjustHeight(e.target);
+      }}
+    />
+  );
+}
+
 export default function ResultsTable({ results, onRefresh }: ResultsTableProps) {
   const [activeSheet, setActiveSheet] = useState<string>('');
   const [editedRows, setEditedRows] = useState<Record<string, Record<string, RowChange>>>({});
@@ -148,7 +182,7 @@ export default function ResultsTable({ results, onRefresh }: ResultsTableProps) 
                         return (
                           <td key={header}>
                             <select
-                              className="input select"
+                               className="input select"
                               style={{ padding: '0.3rem 1.5rem 0.3rem 0.6rem', fontSize: '0.8rem', minWidth: 160 }}
                               value={currentVal}
                               onChange={(e) => handleCellChange(idx, 'status', e.target.value)}
@@ -166,11 +200,11 @@ export default function ResultsTable({ results, onRefresh }: ResultsTableProps) 
                         const currentVal = rowChanges.comments || (value as string) || '';
                         return (
                           <td key={header}>
-                            <textarea
+                            <AutoResizeTextarea
                               className="input textarea"
                               style={{ minWidth: 200, fontSize: '0.8rem' }}
                               value={currentVal}
-                              onChange={(e) => handleCellChange(idx, 'comments', e.target.value)}
+                              onChange={(val) => handleCellChange(idx, 'comments', val)}
                             />
                           </td>
                         );
@@ -180,11 +214,11 @@ export default function ResultsTable({ results, onRefresh }: ResultsTableProps) 
                         const currentVal = rowChanges.logs || (value as string) || '';
                         return (
                           <td key={header}>
-                            <textarea
+                            <AutoResizeTextarea
                               className="input textarea"
                               style={{ minWidth: 250, fontSize: '0.78rem' }}
                               value={currentVal}
-                              onChange={(e) => handleCellChange(idx, 'logs', e.target.value)}
+                              onChange={(val) => handleCellChange(idx, 'logs', val)}
                             />
                           </td>
                         );
