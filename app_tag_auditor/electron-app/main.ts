@@ -120,7 +120,9 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:3000');
   }
 
-  mainWindow.webContents.openDevTools();
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools();
+  }
 
   mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
     console.log(`[Renderer L${level}] ${msg} (${src}:${line})`);
