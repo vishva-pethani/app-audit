@@ -164,6 +164,11 @@ export default function Home() {
             )}
           </div>
           {runError && <p className="text-xs text-error">{runError}</p>}
+          {status && status.error && (
+            <p className="text-xs text-error" style={{ marginTop: '0.2rem' }}>
+              ❌ Pipeline run failed: {status.error}
+            </p>
+          )}
         </div>
 
         {/* Terminal Live logs */}
