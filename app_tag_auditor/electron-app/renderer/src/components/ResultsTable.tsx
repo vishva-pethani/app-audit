@@ -216,7 +216,7 @@ export default function ResultsTable({ results, onRefresh }: ResultsTableProps) 
                           <td key={header}>
                             <AutoResizeTextarea
                               className="input textarea"
-                              style={{ minWidth: 250, fontSize: '0.78rem' }}
+                              style={{ minWidth: 400, fontSize: '0.78rem' }}
                               value={currentVal}
                               onChange={(val) => handleCellChange(idx, 'logs', val)}
                             />
