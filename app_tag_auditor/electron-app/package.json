@@ -27,7 +27,7 @@
       { "from": "../core", "to": "core" },
       { "from": "../frontend", "to": "frontend" },
       { "from": "../schemas", "to": "schemas" },
-      { "from": "..", "to": ".", "filter": ["requirements.txt", "orchestrator.py"] }
+      { "from": "..", "to": ".", "filter": ["requirements.txt", "orchestrator.py", ".env", "client_secrets.json"] }
     ],
     "linux": {
       "target": ["deb", "AppImage"],

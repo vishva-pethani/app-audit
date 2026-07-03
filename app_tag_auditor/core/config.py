@@ -37,6 +37,25 @@ class Settings(BaseSettings):
             
         if not os.path.isabs(self.LOCAL_OUTPUT_PATH):
             self.LOCAL_OUTPUT_PATH = os.path.abspath(os.path.join(project_root, self.LOCAL_OUTPUT_PATH))
+
+        # Dynamically fallback if JADX_PATH does not exist
+        if self.JADX_PATH:
+            if not os.path.exists(self.JADX_PATH):
+                import shutil
+                system_jadx = shutil.which("jadx")
+                if system_jadx:
+                    self.JADX_PATH = system_jadx
+                else:
+                    packaged_jadx = os.path.join(project_root, "jadx", "bin", "jadx")
+                    if os.path.exists(packaged_jadx):
+                        self.JADX_PATH = packaged_jadx
+                    else:
+                        # Fallback for bin/jadx folder structure
+                        packaged_jadx_bin = os.path.join(project_root, "bin", "jadx", "bin", "jadx")
+                        if os.path.exists(packaged_jadx_bin):
+                            self.JADX_PATH = packaged_jadx_bin
+                        else:
+                            self.JADX_PATH = "jadx"
             
         return self
 
