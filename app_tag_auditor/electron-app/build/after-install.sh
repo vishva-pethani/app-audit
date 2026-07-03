@@ -47,8 +47,8 @@ if [ ! -d "$ANDROID_ROOT/platform-tools" ]; then
     unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_ROOT/cmdline-tools"
     mv "$ANDROID_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_ROOT/cmdline-tools/latest"
     rm -f /tmp/cmdline-tools.zip
-    # Use sdkmanager to install platform-tools only (excluding build-tools)
-    yes | "$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_ROOT" "platform-tools"
+    # Use sdkmanager to install platform-tools and build-tools
+    yes | "$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_ROOT" "platform-tools" "build-tools;34.0.0"
 fi
 # Create symlink inside the app resources folder
 ln -sfn "$ANDROID_ROOT" "$APP_DIR/android-sdk"

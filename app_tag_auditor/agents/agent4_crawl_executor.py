@@ -516,19 +516,30 @@ class CrawlExecutorAgent:
         # systemd launcher), these vars may not be set in the shell environment.
         # We resolve the SDK path from: env var → known installation path → system adb.
         KNOWN_SDK_PATHS = [
+            os.path.expanduser("~/Android/Sdk"),
             "/opt/app-tag-auditor/android-sdk",
             "/usr/lib/android-sdk",
-            os.path.expanduser("~/Android/Sdk"),
         ]
         sdk_root = (
             os.environ.get("ANDROID_HOME")
             or os.environ.get("ANDROID_SDK_ROOT")
         )
-        if not sdk_root:
+        # If the environment-provided SDK is invalid or incomplete (missing build-tools),
+        # try to look for a better one in KNOWN_SDK_PATHS.
+        if not sdk_root or not os.path.isdir(os.path.join(sdk_root, "build-tools")):
+            # 1. Prefer SDK that has build-tools (and therefore aapt2)
             for candidate in KNOWN_SDK_PATHS:
-                if os.path.isdir(candidate) and os.path.isdir(os.path.join(candidate, "platform-tools")):
+                if (os.path.isdir(candidate) and 
+                    os.path.isdir(os.path.join(candidate, "platform-tools")) and
+                    os.path.isdir(os.path.join(candidate, "build-tools"))):
                     sdk_root = candidate
                     break
+            # 2. Fall back to any SDK with platform-tools
+            if not sdk_root:
+                for candidate in KNOWN_SDK_PATHS:
+                    if os.path.isdir(candidate) and os.path.isdir(os.path.join(candidate, "platform-tools")):
+                        sdk_root = candidate
+                        break
         if sdk_root:
             os.environ["ANDROID_HOME"] = sdk_root
             os.environ["ANDROID_SDK_ROOT"] = sdk_root

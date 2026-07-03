@@ -5,7 +5,10 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  trailingSlash: true,
+  // trailingSlash must be FALSE for Electron's app:// protocol.
+  // With trailingSlash:true, scripts load from app://index.html/_next/...
+  // instead of app://_next/..., breaking hydration entirely.
+  trailingSlash: false,
 };
 
 export default nextConfig;

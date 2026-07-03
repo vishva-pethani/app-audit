@@ -1,5 +1,7 @@
+import os
 from functools import lru_cache
 from typing import Optional
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -21,10 +23,22 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "anthropic"
     RUNTIME_CAPTURE_BUFFER_SECONDS: float = 3.0
 
-
     ANTHROPIC_API_KEY: Optional[str] = None
     COMPANY_LLM_GATEWAY_URL: Optional[str] = None
     COMPANY_LLM_GATEWAY_API_KEY: Optional[str] = None
+
+    @model_validator(mode="after")
+    def resolve_absolute_paths(self) -> "Settings":
+        # Resolve paths relative to the project root directory (parent of 'core' folder)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        if not os.path.isabs(self.TEMP_STORAGE_DIR):
+            self.TEMP_STORAGE_DIR = os.path.abspath(os.path.join(project_root, self.TEMP_STORAGE_DIR))
+            
+        if not os.path.isabs(self.LOCAL_OUTPUT_PATH):
+            self.LOCAL_OUTPUT_PATH = os.path.abspath(os.path.join(project_root, self.LOCAL_OUTPUT_PATH))
+            
+        return self
 
 @lru_cache
 def get_settings() -> Settings:
@@ -32,3 +46,4 @@ def get_settings() -> Settings:
     Returns a cached instance of the application Settings.
     """
     return Settings()
+
