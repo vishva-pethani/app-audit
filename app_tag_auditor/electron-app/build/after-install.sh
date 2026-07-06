@@ -5,9 +5,20 @@ set -e
 # Export a robust PATH environment variable since dpkg runs postinst with a minimal PATH
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-APP_DIR="/opt/AppTagAuditor/resources/app"
+# Dynamically find the installed resources/app directory
+APP_DIR="$(find /opt /usr/share /usr/local -type d -path "*/AppTagAuditor/resources/app" -o -path "*/app-tag-auditor/resources/app" 2>/dev/null | head -n 1)"
+if [ -z "$APP_DIR" ]; then
+    APP_DIR="/opt/AppTagAuditor/resources/app"
+fi
+
+# Dynamically derive parent installation directories
+INSTALL_ROOT="$(dirname "$(dirname "$APP_DIR")")" # /opt/AppTagAuditor or equivalent
+PARENT_OPT_DIR="$(dirname "$INSTALL_ROOT")"        # /opt or equivalent
+
 echo "=== App Tag Auditor Post-Install Setup ==="
 echo "Target directory: $APP_DIR"
+echo "Install root: $INSTALL_ROOT"
+echo "Parent directory: $PARENT_OPT_DIR"
 
 # 1. Setup Python Virtual Environment and install requirements
 echo "--- Setting up Python virtual environment ---"
@@ -27,7 +38,7 @@ APPIUM_BIN="$(npm config get prefix)/bin/appium"
 # 3. Install JADX (in a path without spaces to avoid Java execution class loader errors)
 echo "--- Installing JADX decompiler ---"
 JADX_VERSION="1.5.0"
-JADX_ROOT="/opt/app-tag-auditor/jadx"
+JADX_ROOT="$PARENT_OPT_DIR/app-tag-auditor/jadx"
 if [ ! -f "$JADX_ROOT/bin/jadx" ]; then
     mkdir -p "$JADX_ROOT"
     wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip
@@ -40,7 +51,7 @@ ln -sfn "$JADX_ROOT" "$APP_DIR/jadx"
 
 # 4. Install Android SDK (platform-tools only, installed in a path without spaces)
 echo "--- Installing Android platform-tools ---"
-ANDROID_ROOT="/opt/app-tag-auditor/android-sdk"
+ANDROID_ROOT="$PARENT_OPT_DIR/app-tag-auditor/android-sdk"
 if [ ! -d "$ANDROID_ROOT/platform-tools" ]; then
     mkdir -p "$ANDROID_ROOT/cmdline-tools"
     wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -O /tmp/cmdline-tools.zip
@@ -102,9 +113,9 @@ udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
 
 # 8. Set generic permissions for all compiled files
-chmod -R 755 "/opt/AppTagAuditor"
-chmod 4755 "/opt/AppTagAuditor/chrome-sandbox"
-chmod -R 777 /opt/app-tag-auditor || true
+chmod -R 755 "$INSTALL_ROOT"
+chmod 4755 "$INSTALL_ROOT/chrome-sandbox"
+chmod -R 777 "$PARENT_OPT_DIR/app-tag-auditor" || true
 
 # 9. Set permissions for dynamic runtime directories and files
 chmod -R 777 "$APP_DIR/output" "$APP_DIR/tmp" "$APP_DIR/logs" "$APP_DIR/.sessions" || true
