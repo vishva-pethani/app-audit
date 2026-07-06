@@ -41,6 +41,22 @@ export default function Home() {
     initData();
   }, []);
 
+  // Poll profile when not authenticated
+  useEffect(() => {
+    if (profile?.authenticated) return;
+    const interval = setInterval(async () => {
+      try {
+        const prof = await api.getProfile();
+        if (prof.authenticated) {
+          setProfile(prof);
+        }
+      } catch (err) {
+        // ignore network errors
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [profile?.authenticated]);
+
   // Poll status when running
   useEffect(() => {
     let interval: NodeJS.Timeout;

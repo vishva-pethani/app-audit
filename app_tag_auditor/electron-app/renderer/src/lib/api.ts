@@ -18,6 +18,7 @@ async function apiFetch<T>(
 ): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(options?.headers ?? {}),
@@ -48,6 +49,7 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/upload/apk`, {
       method: 'POST',
       body: fd,
+      credentials: 'include',
     });
     if (!res.ok) throw new Error('APK upload failed');
     return res.json();
@@ -59,6 +61,7 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/upload/schema`, {
       method: 'POST',
       body: fd,
+      credentials: 'include',
     });
     if (!res.ok) throw new Error('Schema upload failed');
     return res.json();

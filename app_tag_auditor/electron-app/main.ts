@@ -103,6 +103,9 @@ function createWindow() {
   );
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://accounts.google.com')) {
+      return { action: 'allow' };
+    }
     if (
       url.startsWith('http://localhost:8501/api/results/download') ||
       !url.startsWith('http://localhost')
@@ -111,6 +114,32 @@ function createWindow() {
       return { action: 'deny' };
     }
     return { action: 'allow' };
+  });
+
+  mainWindow.webContents.on('did-create-window', (childWindow) => {
+    childWindow.webContents.setUserAgent(
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+    );
+
+    const handleRedirect = (url: string) => {
+      if (url.startsWith('http://localhost:8501')) {
+        childWindow.webContents.once('did-finish-load', () => {
+          setTimeout(() => {
+            if (!childWindow.isDestroyed()) {
+              childWindow.close();
+            }
+          }, 1500);
+        });
+      }
+    };
+
+    childWindow.webContents.on('will-navigate', (_event, url) => {
+      handleRedirect(url);
+    });
+
+    childWindow.webContents.on('did-redirect-navigation', (_event, url) => {
+      handleRedirect(url);
+    });
   });
 
   // Load the app

@@ -16,7 +16,7 @@ export default function GoogleAuth({ clientId, redirectUri, label = 'Connect Goo
       return;
     }
     const url = buildOAuthUrl(clientId, redirectUri);
-    window.location.replace(url);
+    window.open(url, 'google-auth', 'width=600,height=700');
   };
 
   return (

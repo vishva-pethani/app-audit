@@ -188,7 +188,7 @@ export default function FileUpload({
                 style={{ fontSize: '0.85rem', padding: '8px 16px' }}
                 onClick={() => {
                   const { buildOAuthUrl } = require('@/lib/api');
-                  window.location.replace(buildOAuthUrl(googleClientId, googleRedirectUri));
+                  window.open(buildOAuthUrl(googleClientId, googleRedirectUri), 'google-auth', 'width=600,height=700');
                 }}
               >
                 <svg viewBox="0 0 24 24" width="16" height="16">
