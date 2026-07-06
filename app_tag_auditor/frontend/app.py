@@ -49,6 +49,38 @@ selected_apk_path = None
 selected_schema_path = None
 apk_source_info = None
 schema_source_info = None
+import json
+
+GLOBAL_SESSION = {
+    "authenticated": False,
+    "google_auth_token": None,
+    "google_refresh_token": None,
+    "google_token_expiry": None,
+    "user_profile": None
+}
+
+PERSISTENT_SESSION_FILE = os.path.join(parent_dir, ".sessions", "desktop_session.json")
+
+def load_persistent_session():
+    global GLOBAL_SESSION
+    if os.path.exists(PERSISTENT_SESSION_FILE):
+        try:
+            with open(PERSISTENT_SESSION_FILE, "r") as f:
+                data = json.load(f)
+                GLOBAL_SESSION.update(data)
+        except Exception as e:
+            logging.error(f"Failed to load persistent session: {e}")
+
+def save_persistent_session():
+    try:
+        os.makedirs(os.path.dirname(PERSISTENT_SESSION_FILE), exist_ok=True)
+        with open(PERSISTENT_SESSION_FILE, "w") as f:
+            json.dump(GLOBAL_SESSION, f)
+    except Exception as e:
+        logging.error(f"Failed to save persistent session: {e}")
+
+# Load session on startup
+load_persistent_session()
 
 class InteractionBridge:
     def __init__(self):
@@ -89,8 +121,8 @@ class PipelineThread(threading.Thread):
 def check_token_refresh():
     """Refreshes the OAuth access token if it is close to expiry."""
     settings = get_settings()
-    token_expiry = session.get("google_token_expiry")
-    refresh_token = session.get("google_refresh_token")
+    token_expiry = session.get("google_token_expiry") or GLOBAL_SESSION.get("google_token_expiry")
+    refresh_token = session.get("google_refresh_token") or GLOBAL_SESSION.get("google_refresh_token")
     if refresh_token and token_expiry:
         if float(token_expiry) < time.time() + 300:
             try:
@@ -106,8 +138,15 @@ def check_token_refresh():
                 )
                 if res.status_code == 200:
                     data = res.json()
-                    session["google_auth_token"] = data.get("access_token")
-                    session["google_token_expiry"] = str(time.time() + data.get("expires_in", 3600))
+                    new_token = data.get("access_token")
+                    new_expiry = str(time.time() + data.get("expires_in", 3600))
+                    
+                    session["google_auth_token"] = new_token
+                    session["google_token_expiry"] = new_expiry
+                    
+                    GLOBAL_SESSION["google_auth_token"] = new_token
+                    GLOBAL_SESSION["google_token_expiry"] = new_expiry
+                    save_persistent_session()
             except Exception:
                 pass
 
@@ -132,29 +171,113 @@ def index():
             )
             if token_res.status_code == 200:
                 token_data = token_res.json()
-                session["google_auth_token"] = token_data.get("access_token")
-                session["google_refresh_token"] = token_data.get("refresh_token")
-                session["google_token_expiry"] = str(time.time() + token_data.get("expires_in", 3600))
+                access_token = token_data.get("access_token")
+                refresh_token = token_data.get("refresh_token")
+                token_expiry = str(time.time() + token_data.get("expires_in", 3600))
+                
+                session["google_auth_token"] = access_token
+                if refresh_token:
+                    session["google_refresh_token"] = refresh_token
+                session["google_token_expiry"] = token_expiry
                 
                 profile_res = requests.get(
                     "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {session['google_auth_token']}"},
+                    headers={"Authorization": f"Bearer {access_token}"},
                     timeout=10
                 )
                 if profile_res.status_code == 200:
-                    session["user_profile"] = profile_res.json()
+                    profile_info = profile_res.json()
+                    session["user_profile"] = profile_info
                     session["authenticated"] = True
+                    
+                    # Update global session
+                    GLOBAL_SESSION["authenticated"] = True
+                    GLOBAL_SESSION["google_auth_token"] = access_token
+                    if refresh_token:
+                        GLOBAL_SESSION["google_refresh_token"] = refresh_token
+                    GLOBAL_SESSION["google_token_expiry"] = token_expiry
+                    GLOBAL_SESSION["user_profile"] = profile_info
+                    save_persistent_session()
         except Exception as e:
             logging.error(f"OAuth exchange error: {e}")
         return redirect(url_for("index"))
+
+    # If successfully authenticated, show a clean message for browser users
+    if GLOBAL_SESSION.get("authenticated"):
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Authentication Successful</title>
+            <style>
+                body {
+                    background-color: #080c15;
+                    color: #ffffff;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .container {
+                    text-align: center;
+                    padding: 40px;
+                    border-radius: 12px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+                    max-width: 450px;
+                }
+                h1 {
+                    color: #10B981;
+                    margin-bottom: 16px;
+                }
+                p {
+                    color: #9CA3AF;
+                    font-size: 1.1em;
+                    line-height: 1.5;
+                    margin: 10px 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 20px;">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <h1>Authentication Success</h1>
+                <p>Your Google Account has been connected successfully.</p>
+                <p>You can safely close this browser window and return to the <strong>App Tag Auditor</strong> desktop application.</p>
+            </div>
+        </body>
+        </html>
+        """
 
     return render_template("index.html")
 
 @app.route("/api/profile", methods=["GET"])
 def get_profile():
+    # Sync from global persistent session if cookie session is empty
+    if not session.get("authenticated") and GLOBAL_SESSION.get("authenticated"):
+        session["authenticated"] = True
+        session["google_auth_token"] = GLOBAL_SESSION.get("google_auth_token")
+        session["google_refresh_token"] = GLOBAL_SESSION.get("google_refresh_token")
+        session["google_token_expiry"] = GLOBAL_SESSION.get("google_token_expiry")
+        session["user_profile"] = GLOBAL_SESSION.get("user_profile")
+
     if not session.get("authenticated"):
         return jsonify({"authenticated": False, "profile": None})
+        
     check_token_refresh()
+    
+    # Sync back to global session in case of token refresh
+    GLOBAL_SESSION["google_auth_token"] = session.get("google_auth_token")
+    GLOBAL_SESSION["google_token_expiry"] = session.get("google_token_expiry")
+    save_persistent_session()
+    
     return jsonify({
         "authenticated": True,
         "profile": session.get("user_profile"),
@@ -172,6 +295,18 @@ def get_config():
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.clear()
+    GLOBAL_SESSION["authenticated"] = False
+    GLOBAL_SESSION["google_auth_token"] = None
+    GLOBAL_SESSION["google_refresh_token"] = None
+    GLOBAL_SESSION["google_token_expiry"] = None
+    GLOBAL_SESSION["user_profile"] = None
+    
+    if os.path.exists(PERSISTENT_SESSION_FILE):
+        try:
+            os.remove(PERSISTENT_SESSION_FILE)
+        except Exception as e:
+            logging.error(f"Failed to delete session file: {e}")
+            
     return jsonify({"success": True})
 
 @app.route("/api/upload/apk", methods=["POST"])
@@ -218,7 +353,7 @@ def drive_picker():
     data = request.json or {}
     file_id = data.get("file_id")
     file_name = data.get("file_name", "drive_file.apk")
-    token = session.get("google_auth_token") or data.get("access_token")
+    token = session.get("google_auth_token") or GLOBAL_SESSION.get("google_auth_token") or data.get("access_token")
     
     if not file_id or not token:
         return jsonify({"error": "Missing file_id or auth token"}), 400
@@ -243,7 +378,7 @@ def sheets_picker():
     global selected_schema_path, schema_source_info
     data = request.json or {}
     sheet_url = data.get("sheet_url")
-    token = session.get("google_auth_token")
+    token = session.get("google_auth_token") or GLOBAL_SESSION.get("google_auth_token")
     
     if not sheet_url or not token:
         return jsonify({"error": "Missing sheet_url or authentication"}), 400
