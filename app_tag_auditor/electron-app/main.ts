@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, protocol, net } from 'electron';
+import { app, BrowserWindow, shell, protocol, net, session } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { pathToFileURL } from 'url';
@@ -117,6 +117,10 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('did-create-window', (childWindow) => {
+    childWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
+      console.log(`[Child Window L${level}] ${msg} (${src}:${line})`);
+    });
+
     childWindow.webContents.setUserAgent(
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
     );
@@ -175,6 +179,11 @@ app.commandLine.appendSwitch('disable-setuid-sandbox');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
 app.on('ready', () => {
+  // Set global user agent to bypass Google OAuth embedded browser blocks
+  session.defaultSession.setUserAgent(
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+  );
+
   // Serve Next.js static export via app:// protocol
   protocol.handle('app', async (request) => {
     try {
