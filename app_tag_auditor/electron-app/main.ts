@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, protocol, net, session } from 'electron';
+import { app, BrowserWindow, shell, protocol, net, session, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { pathToFileURL } from 'url';
@@ -185,9 +185,10 @@ function createWindow() {
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
   );
 
+  const flaskPort = process.env.FLASK_PORT || '8501';
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (
-      url.startsWith('http://localhost:8501/api/results/download') ||
+      url.startsWith(`http://localhost:${flaskPort}/api/results/download`) ||
       !url.startsWith('http://localhost')
     ) {
       shell.openExternal(url);
@@ -259,6 +260,11 @@ app.on('ready', () => {
       console.error(`[app://] Error: ${err.message} for ${request.url}`);
       return new Response(`Error: ${err.message}`, { status: 500 });
     }
+  });
+
+  ipcMain.on('get-api-base-url', (event) => {
+    const flaskPort = process.env.FLASK_PORT || '8501';
+    event.returnValue = `http://localhost:${flaskPort}`;
   });
 
   startServices();

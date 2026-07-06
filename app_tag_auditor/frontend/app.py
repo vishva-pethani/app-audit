@@ -23,6 +23,7 @@ from orchestrator import run_pipeline
 
 from flask_cors import CORS
 
+settings = get_settings()
 app = Flask(__name__, template_folder='templates')
 CORS(
     app,
@@ -32,7 +33,7 @@ CORS(
                 "app://index.html",
                 "app://.",
                 "http://localhost:3000",
-                "http://localhost:8501"
+                f"http://localhost:{settings.FLASK_PORT}"
             ]
         }
     },
@@ -636,4 +637,5 @@ def download_results():
     return send_from_directory(directory, filename, as_attachment=True, download_name=export_filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8501, debug=True)
+    settings = get_settings()
+    app.run(host="0.0.0.0", port=settings.FLASK_PORT, debug=True)

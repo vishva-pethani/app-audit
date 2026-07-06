@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     LOCAL_OUTPUT_PATH: str = "./output/audit_results.xlsx"
     JADX_PATH: str = "jadx"
     APPIUM_SERVER_URL: str = "http://localhost:4723"
+    FLASK_PORT: int = 8501
     ANDROID_APP_PACKAGE: Optional[str] = None
     TEMP_STORAGE_DIR: str = "./tmp"
     LLM_PROVIDER: str = "anthropic"
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
         # Resolve paths relative to the project root directory (parent of 'core' folder)
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
+        if self.GOOGLE_OAUTH_REDIRECT_URI == "http://localhost:8501" and self.FLASK_PORT != 8501:
+            self.GOOGLE_OAUTH_REDIRECT_URI = f"http://localhost:{self.FLASK_PORT}"
+
         if not os.path.isabs(self.TEMP_STORAGE_DIR):
             self.TEMP_STORAGE_DIR = os.path.abspath(os.path.join(project_root, self.TEMP_STORAGE_DIR))
             

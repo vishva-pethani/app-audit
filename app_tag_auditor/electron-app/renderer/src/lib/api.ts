@@ -9,8 +9,14 @@ import type {
   SaveEditsPayload,
 } from './types';
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8501';
+const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.getApiBaseUrl) {
+    return (window as any).electronAPI.getApiBaseUrl();
+  }
+  return process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8501';
+};
+
+const BASE_URL = getApiBaseUrl();
 
 async function apiFetch<T>(
   path: string,
