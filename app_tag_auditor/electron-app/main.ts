@@ -20,14 +20,72 @@ let adbProcess: ChildProcess | null = null;
 function getAndroidHome(isProd: boolean, workingDir: string): string {
   let androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
   if (!androidHome || !fs.existsSync(path.join(androidHome, 'platform-tools'))) {
-    const hostSdk = path.join(os.homedir(), 'Android/Sdk');
-    if (fs.existsSync(hostSdk) && fs.existsSync(path.join(hostSdk, 'platform-tools'))) {
-      androidHome = hostSdk;
-    } else {
+    const commonPaths = [
+      path.join(os.homedir(), 'Android/Sdk'),
+      '/usr/lib/android-sdk',
+      '/opt/android-sdk',
+      '/usr/local/android-sdk',
+      path.join(workingDir, 'android-sdk')
+    ];
+    for (const p of commonPaths) {
+      if (fs.existsSync(p) && fs.existsSync(path.join(p, 'platform-tools'))) {
+        androidHome = p;
+        break;
+      }
+    }
+    if (!androidHome) {
       androidHome = isProd ? path.join(workingDir, 'android-sdk') : '/opt/android-sdk';
     }
   }
   return androidHome;
+}
+
+function getAppiumPath(): string {
+  const commonPaths = [
+    '/usr/local/bin/appium',
+    '/usr/bin/appium',
+    '/bin/appium'
+  ];
+  for (const p of commonPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  try {
+    const { execSync } = require('child_process');
+    const prefix = execSync('npm config get prefix', { encoding: 'utf8' }).trim();
+    const npmPath = path.join(prefix, 'bin', 'appium');
+    if (fs.existsSync(npmPath)) {
+      return npmPath;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return 'appium';
+}
+
+function loadEnv(workingDir: string) {
+  const envPath = path.join(workingDir, '.env');
+  if (fs.existsSync(envPath)) {
+    try {
+      const content = fs.readFileSync(envPath, 'utf8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const firstEq = trimmed.indexOf('=');
+          if (firstEq !== -1) {
+            const key = trimmed.substring(0, firstEq).trim();
+            const val = trimmed.substring(firstEq + 1).trim().replace(/^['"]|['"]$/g, '');
+            if (key) {
+              process.env[key] = val;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse .env file:', e);
+    }
+  }
 }
 
 // ── Spawn ADB, Appium, and Flask Python Backend ────────────────────────────────
@@ -35,19 +93,24 @@ function startServices() {
   const isProd = app.isPackaged;
   const appPath = app.getAppPath();
   const workingDir = isProd ? appPath : path.resolve(appPath, '..');
-  const pythonScript = path.join(workingDir, 'frontend', 'app.py');
 
+  // Load environment variables from .env
+  loadEnv(workingDir);
+
+  const pythonScript = path.join(workingDir, 'frontend', 'app.py');
   const pythonExecutable = isProd ? path.join(workingDir, 'venv', 'bin', 'python3') : 'python3';
   const androidHome = getAndroidHome(isProd, workingDir);
   const adbPath = isProd ? (fs.existsSync(path.join(androidHome, 'platform-tools', 'adb')) ? path.join(androidHome, 'platform-tools', 'adb') : 'adb') : 'adb';
   const venvBin = isProd ? path.join(workingDir, 'venv', 'bin') : '';
   const jadxBin = isProd ? path.join(workingDir, 'jadx', 'bin') : '';
+  const appiumHome = path.join(workingDir, '.appium');
 
   const env: any = {
     ...process.env,
     PYTHONUNBUFFERED: '1',
     ANDROID_HOME: androidHome,
-    ANDROID_SDK_ROOT: androidHome
+    ANDROID_SDK_ROOT: androidHome,
+    APPIUM_HOME: appiumHome
   };
 
   if (isProd) {
@@ -68,10 +131,30 @@ function startServices() {
   const appiumLogStream = fs.createWriteStream(appiumLogPath, { flags: 'a' });
   const pythonLogStream = fs.createWriteStream(pythonLogPath, { flags: 'a' });
 
-  console.log('Spawning Appium on port 4723');
-  appiumProcess = spawn('appium', ['--address', '127.0.0.1', '--log-level', 'debug'], { env });
+  // Dynamically resolve port and address for Appium from APPIUM_SERVER_URL
+  let appiumPort = '4723';
+  let appiumAddress = '127.0.0.1';
+  if (process.env.APPIUM_SERVER_URL) {
+    try {
+      const url = new URL(process.env.APPIUM_SERVER_URL);
+      if (url.port) appiumPort = url.port;
+      if (url.hostname && url.hostname !== 'localhost') {
+        appiumAddress = url.hostname;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const appiumPath = getAppiumPath();
+  console.log(`Spawning Appium from ${appiumPath} on ${appiumAddress}:${appiumPort}`);
+  appiumProcess = spawn(appiumPath, ['--address', appiumAddress, '--port', appiumPort, '--log-level', 'debug'], { env });
   appiumProcess.stdout?.pipe(appiumLogStream);
   appiumProcess.stderr?.pipe(appiumLogStream);
+  appiumProcess.on('error', (err) => {
+    console.error('Failed to start Appium process:', err);
+    appiumLogStream.write(`ERROR: Failed to start Appium process: ${err.message}\n`);
+  });
   appiumProcess.on('close', (code) => console.log(`Appium exited with code ${code}`));
 
   console.log(`Spawning Python: ${pythonExecutable} ${pythonScript}`);
