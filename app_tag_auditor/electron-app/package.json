@@ -11,7 +11,9 @@
     "build": "npm run build:main && npm run build:renderer",
     "dev:main": "tsc -p tsconfig.json && electron dist/main.js",
     "dev": "concurrently \"cd renderer && npm run dev\" \"wait-on http://localhost:3000 && npm run dev:main\"",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:win": "npm run build && electron-builder --win"
   },
   "build": {
     "appId": "com.jotarostrategy.apptagauditor",
@@ -27,7 +29,8 @@
       { "from": "../core", "to": "core" },
       { "from": "../frontend", "to": "frontend" },
       { "from": "../schemas", "to": "schemas" },
-      { "from": "..", "to": ".", "filter": ["requirements.txt", "orchestrator.py", ".env", "client_secrets.json"] }
+      { "from": "..", "to": ".", "filter": ["requirements.txt", "orchestrator.py", ".env", "client_secrets.json"] },
+      { "from": "build", "to": "build", "filter": ["after-install.ps1"] }
     ],
     "linux": {
       "target": ["deb", "AppImage"],
@@ -49,6 +52,19 @@
       ],
       "afterInstall": "build/after-install.sh",
       "afterRemove": "build/after-remove.sh"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "App Tag Auditor",
+      "include": "build/installer.nsh"
     }
   },
   "devDependencies": {

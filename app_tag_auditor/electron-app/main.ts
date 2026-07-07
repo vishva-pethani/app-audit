@@ -17,16 +17,24 @@ let flaskProcess: ChildProcess | null = null;
 let appiumProcess: ChildProcess | null = null;
 let adbProcess: ChildProcess | null = null;
 
+const isWindows = process.platform === 'win32';
+
 function getAndroidHome(isProd: boolean, workingDir: string): string {
   let androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
   if (!androidHome || !fs.existsSync(path.join(androidHome, 'platform-tools'))) {
-    const commonPaths = [
-      path.join(os.homedir(), 'Android/Sdk'),
-      '/usr/lib/android-sdk',
-      '/opt/android-sdk',
-      '/usr/local/android-sdk',
-      path.join(workingDir, 'android-sdk')
-    ];
+    const commonPaths = isWindows
+      ? [
+          path.join(os.homedir(), 'AppData', 'Local', 'Android', 'Sdk'),
+          'C:\\Android\\Sdk',
+          path.join(workingDir, 'android-sdk'),
+        ]
+      : [
+          path.join(os.homedir(), 'Android/Sdk'),
+          '/usr/lib/android-sdk',
+          '/opt/android-sdk',
+          '/usr/local/android-sdk',
+          path.join(workingDir, 'android-sdk'),
+        ];
     for (const p of commonPaths) {
       if (fs.existsSync(p) && fs.existsSync(path.join(p, 'platform-tools'))) {
         androidHome = p;
@@ -34,18 +42,26 @@ function getAndroidHome(isProd: boolean, workingDir: string): string {
       }
     }
     if (!androidHome) {
-      androidHome = isProd ? path.join(workingDir, 'android-sdk') : '/opt/android-sdk';
+      androidHome = isProd
+        ? path.join(workingDir, 'android-sdk')
+        : (isWindows ? 'C:\\Android\\Sdk' : '/opt/android-sdk');
     }
   }
   return androidHome;
 }
 
 function getAppiumPath(): string {
-  const commonPaths = [
-    '/usr/local/bin/appium',
-    '/usr/bin/appium',
-    '/bin/appium'
-  ];
+  const ext = isWindows ? '.cmd' : '';
+  const commonPaths = isWindows
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'appium.cmd'),
+        'C:\\Program Files\\nodejs\\appium.cmd',
+      ]
+    : [
+        '/usr/local/bin/appium',
+        '/usr/bin/appium',
+        '/bin/appium',
+      ];
   for (const p of commonPaths) {
     if (fs.existsSync(p)) {
       return p;
@@ -53,15 +69,15 @@ function getAppiumPath(): string {
   }
   try {
     const { execSync } = require('child_process');
-    const prefix = execSync('npm config get prefix', { encoding: 'utf8' }).trim();
-    const npmPath = path.join(prefix, 'bin', 'appium');
+    const prefix = execSync('npm config get prefix', { encoding: 'utf8', shell: true }).trim();
+    const npmPath = path.join(prefix, isWindows ? '' : 'bin', `appium${ext}`);
     if (fs.existsSync(npmPath)) {
       return npmPath;
     }
   } catch (e) {
     // ignore
   }
-  return 'appium';
+  return `appium${ext}`;
 }
 
 function loadEnv(workingDir: string) {
@@ -98,10 +114,21 @@ function startServices() {
   loadEnv(workingDir);
 
   const pythonScript = path.join(workingDir, 'frontend', 'app.py');
-  const pythonExecutable = isProd ? path.join(workingDir, 'venv', 'bin', 'python3') : 'python3';
+
+  // Python executable differs by platform and whether we are in production
+  const venvPythonRelPath = isWindows
+    ? path.join('venv', 'Scripts', 'python.exe')
+    : path.join('venv', 'bin', 'python3');
+  const pythonExecutable = isProd ? path.join(workingDir, venvPythonRelPath) : (isWindows ? 'python' : 'python3');
+
   const androidHome = getAndroidHome(isProd, workingDir);
-  const adbPath = isProd ? (fs.existsSync(path.join(androidHome, 'platform-tools', 'adb')) ? path.join(androidHome, 'platform-tools', 'adb') : 'adb') : 'adb';
-  const venvBin = isProd ? path.join(workingDir, 'venv', 'bin') : '';
+  const adbExe = isWindows ? 'adb.exe' : 'adb';
+  const adbFull = path.join(androidHome, 'platform-tools', adbExe);
+  const adbPath = isProd ? (fs.existsSync(adbFull) ? adbFull : adbExe) : adbExe;
+
+  const venvBin = isProd
+    ? path.join(workingDir, isWindows ? path.join('venv', 'Scripts') : path.join('venv', 'bin'))
+    : '';
   const jadxBin = isProd ? path.join(workingDir, 'jadx', 'bin') : '';
   const appiumHome = path.join(workingDir, '.appium');
 
@@ -115,7 +142,8 @@ function startServices() {
 
   if (isProd) {
     const platformTools = path.join(androidHome, 'platform-tools');
-    env.PATH = `${venvBin}:${platformTools}:${jadxBin}:${process.env.PATH}`;
+    const pathSep = isWindows ? ';' : ':';
+    env[isWindows ? 'Path' : 'PATH'] = [venvBin, platformTools, jadxBin, process.env.PATH || process.env.Path || ''].filter(Boolean).join(pathSep);
   }
 
   console.log(`Spawning ADB: ${adbPath} start-server`);
