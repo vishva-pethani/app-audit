@@ -13,7 +13,7 @@
     "dev": "concurrently \"cd renderer && npm run dev\" \"wait-on http://localhost:3000 && npm run dev:main\"",
     "package": "npm run build && electron-builder",
     "package:linux": "npm run build && electron-builder --linux",
-    "package:win": "npm run build && electron-builder --win"
+    "package:win": "npm run build && electron-builder --windows"
   },
   "build": {
     "appId": "com.jotarostrategy.apptagauditor",
@@ -29,8 +29,7 @@
       { "from": "../core", "to": "core" },
       { "from": "../frontend", "to": "frontend" },
       { "from": "../schemas", "to": "schemas" },
-      { "from": "..", "to": ".", "filter": ["requirements.txt", "orchestrator.py", ".env", "client_secrets.json"] },
-      { "from": "build", "to": "build", "filter": ["after-install.ps1"] }
+      { "from": "..", "to": ".", "filter": ["requirements.txt", "orchestrator.py", ".env", "client_secrets.json"] }
     ],
     "linux": {
       "target": ["deb", "AppImage"],
@@ -56,7 +55,8 @@
     "win": {
       "target": [
         { "target": "nsis", "arch": ["x64"] }
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -64,7 +64,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "App Tag Auditor",
-      "include": "build/installer.nsh"
+      "include": "build/windows-setup.nsh",
+      "uninstallDisplayName": "App Tag Auditor"
     }
   },
   "devDependencies": {

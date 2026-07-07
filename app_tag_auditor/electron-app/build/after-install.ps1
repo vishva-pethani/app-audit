@@ -1,97 +1,128 @@
-# after-install.ps1 — Post-install setup for App Tag Auditor on Windows
-# Run by the NSIS installer after files are copied
+# after-install.ps1
+# Post-install setup script for App Tag Auditor on Windows.
+# Equivalent to after-install.sh for Linux.
+# Run by NSIS after the app files are copied to $INSTDIR.
 
 param(
     [string]$InstallDir = "$PSScriptRoot\.."
 )
 
-$LogFile = "$env:TEMP\AppTagAuditor-install.log"
-function Log($msg) {
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$ts  $msg" | Tee-Object -FilePath $LogFile -Append | Write-Host
+# ── Resolve installation directory ────────────────────────────────────────────
+$APP_DIR = (Resolve-Path $InstallDir -ErrorAction SilentlyContinue)?.Path
+if (-not $APP_DIR) {
+    $APP_DIR = $InstallDir
+}
+$LOG_DIR  = "$APP_DIR\logs"
+$LOG_FILE = "$LOG_DIR\install.log"
+
+New-Item -ItemType Directory -Force -Path $LOG_DIR | Out-Null
+
+function Log {
+    param([string]$msg)
+    $ts = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    $line = "[$ts] $msg"
+    Write-Host $line
+    Add-Content -Path $LOG_FILE -Value $line
 }
 
-Log "=== App Tag Auditor Post-Install Setup (Windows) ==="
-Log "Install directory: $InstallDir"
+Log "=== App Tag Auditor Windows Post-Install Setup ==="
+Log "Install directory: $APP_DIR"
 
-# ── 1. Python Virtual Environment ───────────────────────────────────────────
+# ── 1. Python virtual environment ─────────────────────────────────────────────
 Log "--- Setting up Python virtual environment ---"
-$Python = "python"
-if (-not (Get-Command $Python -ErrorAction SilentlyContinue)) {
-    $Python = "python3"
+$pythonCmd = (Get-Command python -ErrorAction SilentlyContinue)?.Source
+if (-not $pythonCmd) {
+    $pythonCmd = (Get-Command python3 -ErrorAction SilentlyContinue)?.Source
 }
-if (-not (Get-Command $Python -ErrorAction SilentlyContinue)) {
-    Log "ERROR: Python not found. Please install Python 3.10+ from https://python.org"
+if (-not $pythonCmd) {
+    Log "ERROR: Python not found. Please install Python 3.10+ from https://python.org and re-run setup."
     exit 1
 }
+Log "Using Python: $pythonCmd"
 
-$VenvDir = Join-Path $InstallDir "venv"
-if (-not (Test-Path $VenvDir)) {
-    & $Python -m venv $VenvDir
-}
-$PipExe   = Join-Path $VenvDir "Scripts\pip.exe"
-$ReqsFile = Join-Path $InstallDir "requirements.txt"
-& $PipExe install --upgrade pip | Out-Null
-& $PipExe install -r $ReqsFile
-Log "Python environment ready."
+& $pythonCmd -m venv "$APP_DIR\venv"
+& "$APP_DIR\venv\Scripts\pip.exe" install --upgrade pip
+& "$APP_DIR\venv\Scripts\pip.exe" install -r "$APP_DIR\requirements.txt"
+Log "Python venv ready."
 
-# ── 2. Appium & UIAutomator2 driver ─────────────────────────────────────────
-Log "--- Installing Appium and uiautomator2 driver ---"
-$AppiumHome = Join-Path $InstallDir ".appium"
-New-Item -ItemType Directory -Force -Path $AppiumHome | Out-Null
-$env:APPIUM_HOME = $AppiumHome
-
-$NpmCmd = "npm"
-if (-not (Get-Command $NpmCmd -ErrorAction SilentlyContinue)) {
-    Log "ERROR: Node.js / npm not found. Please install from https://nodejs.org"
+# ── 2. Node.js / npm check ────────────────────────────────────────────────────
+Log "--- Checking Node.js and npm ---"
+$nodeCmd = (Get-Command node -ErrorAction SilentlyContinue)?.Source
+$npmCmd  = (Get-Command npm  -ErrorAction SilentlyContinue)?.Source
+if (-not $nodeCmd -or -not $npmCmd) {
+    Log "ERROR: Node.js / npm not found. Please install from https://nodejs.org (LTS) and re-run setup."
     exit 1
 }
+Log "Node.js: $(& node --version)  npm: $(& npm --version)"
 
-npm install -g appium@latest 2>&1 | Out-Null
-appium driver install uiautomator2 2>&1 | Out-Null
-Log "Appium ready."
+# ── 3. Appium + uiautomator2 ─────────────────────────────────────────────────
+Log "--- Installing Appium globally ---"
+$APPIUM_HOME = "$APP_DIR\.appium"
+New-Item -ItemType Directory -Force -Path $APPIUM_HOME | Out-Null
+$env:APPIUM_HOME = $APPIUM_HOME
 
-# ── 3. Android SDK (platform-tools + build-tools) ───────────────────────────
-Log "--- Setting up Android platform-tools ---"
-# Check if user already has an Android SDK
-$UserSdk = "$env:LOCALAPPDATA\Android\Sdk"
-if (Test-Path (Join-Path $UserSdk "platform-tools\adb.exe")) {
-    Log "Found existing Android SDK at $UserSdk — skipping download."
+& npm install -g appium@latest 2>&1 | ForEach-Object { Log $_ }
+
+$appiumBin = (Get-Command appium -ErrorAction SilentlyContinue)?.Source
+if (-not $appiumBin) {
+    $npmPrefix = (& npm config get prefix).Trim()
+    $appiumBin = "$npmPrefix\appium.cmd"
+}
+
+if (Test-Path $appiumBin) {
+    Log "Installing uiautomator2 driver..."
+    & $appiumBin driver install uiautomator2 2>&1 | ForEach-Object { Log $_ }
 } else {
-    $AndroidRoot = Join-Path $env:ProgramFiles "AppTagAuditor\android-sdk"
-    New-Item -ItemType Directory -Force -Path $AndroidRoot | Out-Null
-
-    $CmdToolsZip = "$env:TEMP\cmdline-tools.zip"
-    Log "Downloading Android command-line tools..."
-    Invoke-WebRequest -Uri "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip" `
-        -OutFile $CmdToolsZip -UseBasicParsing
-
-    $CmdToolsDir = Join-Path $AndroidRoot "cmdline-tools"
-    Expand-Archive -Path $CmdToolsZip -DestinationPath $CmdToolsDir -Force
-    Rename-Item -Path (Join-Path $CmdToolsDir "cmdline-tools") -NewName "latest" -ErrorAction SilentlyContinue
-    Remove-Item $CmdToolsZip
-
-    $SdkManager = Join-Path $CmdToolsDir "latest\bin\sdkmanager.bat"
-    Log "Installing platform-tools and build-tools via sdkmanager..."
-    & $SdkManager --sdk_root="$AndroidRoot" "platform-tools" "build-tools;34.0.0" 2>&1 | Out-Null
-
-    # Symlink into app resources
-    $LinkTarget = Join-Path $InstallDir "android-sdk"
-    if (Test-Path $LinkTarget) { Remove-Item $LinkTarget -Force }
-    New-Item -ItemType Junction -Path $LinkTarget -Target $AndroidRoot | Out-Null
-    Log "Android SDK installed to $AndroidRoot."
+    Log "WARNING: Appium binary not found at $appiumBin — skipping uiautomator2 install."
 }
 
-# ── 4. Create runtime directories ───────────────────────────────────────────
+# ── 4. JADX decompiler ────────────────────────────────────────────────────────
+Log "--- Installing JADX decompiler ---"
+$JADX_VERSION = "1.5.0"
+$JADX_ROOT    = "$APP_DIR\jadx"
+if (-not (Test-Path "$JADX_ROOT\bin\jadx.bat")) {
+    New-Item -ItemType Directory -Force -Path $JADX_ROOT | Out-Null
+    $jadxZip = "$env:TEMP\jadx.zip"
+    Invoke-WebRequest "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -OutFile $jadxZip
+    Expand-Archive -Path $jadxZip -DestinationPath $JADX_ROOT -Force
+    Remove-Item $jadxZip
+    Log "JADX installed at $JADX_ROOT"
+} else {
+    Log "JADX already installed."
+}
+
+# ── 5. Android SDK command-line tools + platform-tools ───────────────────────
+Log "--- Installing Android SDK platform-tools ---"
+$ANDROID_ROOT = "$APP_DIR\android-sdk"
+if (-not (Test-Path "$ANDROID_ROOT\platform-tools\adb.exe")) {
+    New-Item -ItemType Directory -Force -Path "$ANDROID_ROOT\cmdline-tools" | Out-Null
+    $cmdToolsZip = "$env:TEMP\cmdline-tools.zip"
+    Invoke-WebRequest "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip" -OutFile $cmdToolsZip
+    Expand-Archive -Path $cmdToolsZip -DestinationPath "$ANDROID_ROOT\cmdline-tools" -Force
+    # electron-builder wants the folder at cmdline-tools\latest
+    if (Test-Path "$ANDROID_ROOT\cmdline-tools\cmdline-tools") {
+        Rename-Item "$ANDROID_ROOT\cmdline-tools\cmdline-tools" "latest"
+    }
+    Remove-Item $cmdToolsZip
+
+    # Accept licenses non-interactively
+    $sdkmgr = "$ANDROID_ROOT\cmdline-tools\latest\bin\sdkmanager.bat"
+    "y" * 10 | & $sdkmgr --sdk_root="$ANDROID_ROOT" "platform-tools" "build-tools;34.0.0"
+    Log "Android SDK installed at $ANDROID_ROOT"
+} else {
+    Log "Android SDK already installed."
+}
+
+# ── 6. Create runtime directories ─────────────────────────────────────────────
 Log "--- Creating runtime directories ---"
-foreach ($dir in @("output","tmp","logs",".sessions",".appium")) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir $dir) | Out-Null
+foreach ($dir in @("output", "tmp", "logs", ".sessions")) {
+    New-Item -ItemType Directory -Force -Path "$APP_DIR\$dir" | Out-Null
 }
 
-# ── 5. Create default .env file ─────────────────────────────────────────────
-$EnvFile = Join-Path $InstallDir ".env"
-if (-not (Test-Path $EnvFile)) {
-    Log "--- Creating default .env file ---"
+# ── 7. Default .env file ──────────────────────────────────────────────────────
+Log "--- Creating default .env file ---"
+$envFile = "$APP_DIR\.env"
+if (-not (Test-Path $envFile)) {
     @"
 GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
@@ -101,7 +132,9 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 LOCAL_OUTPUT_PATH=./output/audit_results.xlsx
 TEMP_STORAGE_DIR=./tmp
 APPIUM_SERVER_URL=http://localhost:4723
-"@ | Set-Content -Path $EnvFile -Encoding UTF8
+"@ | Set-Content -Path $envFile -Encoding UTF8
+    Log ".env created."
 }
 
 Log "=== Post-Install Setup Completed Successfully ==="
+exit 0

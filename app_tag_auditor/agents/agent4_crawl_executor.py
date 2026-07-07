@@ -516,6 +516,11 @@ class CrawlExecutorAgent:
         # systemd launcher), these vars may not be set in the shell environment.
         # We resolve the SDK path from: env var → known installation path → system adb.
         KNOWN_SDK_PATHS = [
+            # Windows default
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk"),
+            os.path.join(os.path.expanduser("~"), "AppData", "Local", "Android", "Sdk"),
+            r"C:\Android\Sdk",
+            # Linux / macOS defaults
             os.path.expanduser("~/Android/Sdk"),
             "/opt/app-tag-auditor/android-sdk",
             "/usr/lib/android-sdk",
