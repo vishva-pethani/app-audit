@@ -1,0 +1,72 @@
+name: Build Desktop Packages
+
+on:
+  push:
+    branches: [electron-code]
+    tags: ['v*']
+  workflow_dispatch:   # allows manual trigger from GitHub UI
+
+jobs:
+  # ── Linux .deb build ────────────────────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install electron-app dependencies
+        working-directory: app_tag_auditor/electron-app
+        run: npm ci
+
+      - name: Install renderer dependencies
+        working-directory: app_tag_auditor/electron-app/renderer
+        run: npm ci
+
+      - name: Build Linux package
+        working-directory: app_tag_auditor/electron-app
+        run: npm run package:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            app_tag_auditor/electron-app/dist-packaged/*.deb
+            app_tag_auditor/electron-app/dist-packaged/*.AppImage
+
+  # ── Windows .exe build ──────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install electron-app dependencies
+        working-directory: app_tag_auditor/electron-app
+        run: npm ci
+
+      - name: Install renderer dependencies
+        working-directory: app_tag_auditor/electron-app/renderer
+        run: npm ci
+
+      - name: Build Windows installer
+        working-directory: app_tag_auditor/electron-app
+        run: npm run package:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: app_tag_auditor/electron-app/dist-packaged/*.exe
