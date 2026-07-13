@@ -118,13 +118,14 @@ function loadEnv(workingDir: string) {
 }
 
 // ── Spawn ADB, Appium, and Flask Python Backend ───────────────────────────────
-function startServices() {
+function startServices(): { workingDir: string; flaskPort: string } {
   const isProd     = app.isPackaged;
   const appPath    = app.getAppPath();
   const workingDir = isProd ? appPath : path.resolve(appPath, '..');
 
   loadEnv(workingDir);
 
+  const flaskPort        = process.env.FLASK_PORT || '8501';
   const pythonScript     = path.join(workingDir, 'frontend', 'app.py');
   const pythonExecutable = getPythonExecutable(isProd, workingDir);
   const androidHome      = getAndroidHome(isProd, workingDir);
@@ -142,6 +143,7 @@ function startServices() {
   const env: any = {
     ...process.env,
     PYTHONUNBUFFERED: '1',
+    FLASK_PORT:       flaskPort,   // explicit so Flask receives it even if .env missing
     ANDROID_HOME:     androidHome,
     ANDROID_SDK_ROOT: androidHome,
     APPIUM_HOME:      appiumHome,
@@ -153,19 +155,26 @@ function startServices() {
     env.PATH = `${extraPaths}${pathSep}${process.env.PATH}`;
   }
 
-  // ── ADB start-server ───────────────────────────────────────────────────────
-  console.log(`Spawning ADB: ${adbPath} start-server`);
-  adbProcess = spawn(adbPath, ['start-server'], {
-    env,
-    shell: isWindows,  // Windows needs shell:true to resolve .exe / .cmd
-  });
-  adbProcess.on('close', (code) => console.log(`ADB start-server completed with code ${code}`));
-
-  // ── Log streams ───────────────────────────────────────────────────────────
+  // ── Log streams (create before any spawn so we can capture errors) ─────────
   const logsDir = path.join(workingDir, 'logs');
   if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
   const appiumLogStream = fs.createWriteStream(path.join(logsDir, 'appium.log'), { flags: 'a' });
   const pythonLogStream = fs.createWriteStream(path.join(logsDir, 'python.log'), { flags: 'a' });
+
+  // Write header so we can identify new sessions in the log
+  const ts = new Date().toISOString();
+  pythonLogStream.write(`\n\n=== App start at ${ts} ===\n`);
+  pythonLogStream.write(`workingDir: ${workingDir}\n`);
+  pythonLogStream.write(`python:     ${pythonExecutable}\n`);
+  pythonLogStream.write(`script:     ${pythonScript}\n`);
+  pythonLogStream.write(`port:       ${flaskPort}\n`);
+  pythonLogStream.write(`pythonExists: ${fs.existsSync(pythonExecutable)}\n`);
+  pythonLogStream.write(`scriptExists: ${fs.existsSync(pythonScript)}\n`);
+
+  // ── ADB start-server ───────────────────────────────────────────────────────
+  console.log(`Spawning ADB: ${adbPath} start-server`);
+  adbProcess = spawn(adbPath, ['start-server'], { env, shell: isWindows });
+  adbProcess.on('close', (code) => console.log(`ADB start-server completed with code ${code}`));
 
   // ── Resolve Appium address/port from APPIUM_SERVER_URL ───────────────────
   let appiumPort    = '4723';
@@ -193,16 +202,68 @@ function startServices() {
   });
   appiumProcess.on('close', (code) => console.log(`Appium exited with code ${code}`));
 
-  // ── Flask / Python backend ────────────────────────────────────────────────
-  console.log(`Spawning Python: ${pythonExecutable} ${pythonScript}`);
-  flaskProcess = spawn(pythonExecutable, [pythonScript], {
-    cwd: workingDir,
-    env,
-    shell: isWindows,
-  });
+  // ── Flask / Python backend ─────────────────────────────────────────────────
+  // On Windows with shell:true, paths containing spaces must be double-quoted.
+  // Using an array of args doesn't work reliably with shell:true on Windows,
+  // so we build a quoted command string manually when on Windows.
+  if (isWindows) {
+    const quotedPy     = `"${pythonExecutable}"`;
+    const quotedScript = `"${pythonScript}"`;
+    const cmdLine      = `${quotedPy} ${quotedScript}`;
+    console.log(`Spawning Flask (Windows shell): ${cmdLine}`);
+    pythonLogStream.write(`spawn cmd: ${cmdLine}\n`);
+    flaskProcess = spawn(cmdLine, [], {
+      cwd: workingDir,
+      env,
+      shell: true,
+    });
+  } else {
+    console.log(`Spawning Flask: ${pythonExecutable} ${pythonScript}`);
+    flaskProcess = spawn(pythonExecutable, [pythonScript], {
+      cwd: workingDir,
+      env,
+      shell: false,
+    });
+  }
+
   flaskProcess.stdout?.pipe(pythonLogStream);
   flaskProcess.stderr?.pipe(pythonLogStream);
-  flaskProcess.on('close', (code) => console.log(`Python exited with code ${code}`));
+  flaskProcess.on('error', (err) => {
+    console.error('Flask spawn error:', err.message);
+    pythonLogStream.write(`SPAWN ERROR: ${err.message}\n`);
+  });
+  flaskProcess.on('close', (code) => {
+    console.log(`Python/Flask exited with code ${code}`);
+    pythonLogStream.write(`Flask exited with code ${code}\n`);
+  });
+
+  return { workingDir, flaskPort };
+}
+
+// ── Poll Flask health endpoint until it responds (or timeout) ─────────────────
+async function waitForFlask(flaskPort: string, timeoutMs = 45_000): Promise<boolean> {
+  const url      = `http://127.0.0.1:${flaskPort}/api/status`;
+  const deadline = Date.now() + timeoutMs;
+  let   delay    = 500;
+
+  console.log(`Waiting for Flask at ${url} (timeout ${timeoutMs}ms)…`);
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      if (res.ok || res.status < 500) {
+        console.log(`Flask is ready (status ${res.status})`);
+        return true;
+      }
+    } catch (_) {
+      // not ready yet
+    }
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay * 1.4, 3000);
+  }
+
+  console.error('Flask did NOT become ready within the timeout.');
+  return false;
 }
 
 // ── Create the main Electron window ──────────────────────────────────────────
@@ -266,7 +327,7 @@ app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-setuid-sandbox');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
-app.on('ready', () => {
+app.on('ready', async () => {
   session.defaultSession.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
   );
@@ -287,7 +348,6 @@ app.on('ready', () => {
         if (fs.existsSync(htmlPath)) resolvedPath = htmlPath;
       }
 
-      console.log(`[app://] ${parsedUrl.pathname} → ${resolvedPath}`);
       return net.fetch(pathToFileURL(resolvedPath).toString());
     } catch (err: any) {
       console.error(`[app://] Error: ${err.message} for ${request.url}`);
@@ -295,13 +355,33 @@ app.on('ready', () => {
     }
   });
 
+  // ── Start backend services first ─────────────────────────────────────────
+  const { flaskPort } = startServices();
+
   ipcMain.on('get-api-base-url', (event) => {
-    const flaskPort = process.env.FLASK_PORT || '8501';
     event.returnValue = `http://localhost:${flaskPort}`;
   });
 
-  startServices();
+  // ── Wait for Flask before showing the window ─────────────────────────────
+  // This prevents the 'Failed to fetch' race condition on slow systems / Windows.
   createWindow();
+
+  if (mainWindow) {
+    mainWindow.setTitle('App Tag Auditor — Starting backend…');
+  }
+
+  const ready = await waitForFlask(flaskPort, 60_000);
+
+  if (mainWindow) {
+    mainWindow.setTitle('App Tag Auditor');
+    if (!ready) {
+      // Flask never started — show an error overlay page so user knows what happened
+      const logsPath = path.join(app.getPath('userData'), '..', 'AppTagAuditor', 'logs', 'python.log');
+      console.error('Flask failed to start. Check logs at:', logsPath);
+    }
+    // Reload the renderer now that the backend is confirmed ready
+    mainWindow.webContents.reload();
+  }
 });
 
 app.on('window-all-closed', () => {

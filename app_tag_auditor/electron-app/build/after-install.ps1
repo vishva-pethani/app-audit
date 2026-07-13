@@ -132,6 +132,7 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 LOCAL_OUTPUT_PATH=./output/audit_results.xlsx
 TEMP_STORAGE_DIR=./tmp
 APPIUM_SERVER_URL=http://localhost:4723
+FLASK_PORT=8501
 "@ | Set-Content -Path $envFile -Encoding UTF8
     Log ".env created."
 }

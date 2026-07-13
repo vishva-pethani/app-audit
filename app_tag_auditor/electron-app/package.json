@@ -25,6 +25,7 @@
     "files": [
       "dist/**/*",
       "renderer/out/**/*",
+      "build/**/*",
       { "from": "../agents", "to": "agents" },
       { "from": "../core", "to": "core" },
       { "from": "../frontend", "to": "frontend" },

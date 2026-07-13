@@ -37,12 +37,45 @@ async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
+/**
+ * Retry wrapper for startup API calls.
+ * Flask needs a few seconds to start inside the Electron process, especially on Windows.
+ * This retries with exponential backoff for up to `maxMs` milliseconds.
+ */
+async function withStartupRetry<T>(
+  fn: () => Promise<T>,
+  maxMs = 30_000,
+  baseDelayMs = 500
+): Promise<T> {
+  const deadline = Date.now() + maxMs;
+  let delay = baseDelayMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      // Only retry on network/fetch errors, not on 4xx/5xx HTTP errors
+      const isNetworkErr =
+        err?.message === 'Failed to fetch' ||
+        err?.message?.includes('fetch') ||
+        err?.message?.includes('network') ||
+        err?.message?.includes('ECONNREFUSED');
+      if (!isNetworkErr) throw err;
+      await new Promise((r) => setTimeout(r, Math.min(delay, 4000)));
+      delay = Math.min(delay * 1.5, 4000);
+    }
+  }
+  throw lastErr;
+}
+
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 export const api = {
-  getConfig: () => apiFetch<AppConfig>('/api/config'),
+  // Startup calls use withStartupRetry — Flask may still be booting (esp. on Windows)
+  getConfig: () => withStartupRetry(() => apiFetch<AppConfig>('/api/config')),
 
-  getProfile: () => apiFetch<ProfileResponse>('/api/profile'),
+  getProfile: () => withStartupRetry(() => apiFetch<ProfileResponse>('/api/profile')),
 
   logout: () =>
     apiFetch<{ success: boolean }>('/api/logout', { method: 'POST' }),

@@ -33,7 +33,9 @@ CORS(
                 "app://index.html",
                 "app://.",
                 "http://localhost:3000",
-                f"http://localhost:{settings.FLASK_PORT}"
+                f"http://localhost:{settings.FLASK_PORT}",
+                # Windows Electron — Chromium may report 'null' origin for app:// protocol
+                "null",
             ]
         }
     },
@@ -638,4 +640,13 @@ def download_results():
 
 if __name__ == "__main__":
     settings = get_settings()
-    app.run(host="0.0.0.0", port=settings.FLASK_PORT, debug=True)
+    # use_reloader=False is critical when Flask is spawned as a child process by Electron.
+    # On Windows, the Werkzeug reloader tries to fork a new process which fails in
+    # packaged/embedded environments, causing the backend to never fully start.
+    app.run(
+        host="0.0.0.0",
+        port=settings.FLASK_PORT,
+        debug=False,
+        use_reloader=False,
+        threaded=True
+    )
