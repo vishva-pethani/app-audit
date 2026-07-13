@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8501"
     GOOGLE_API_KEY: Optional[str] = None
     LOCAL_OUTPUT_PATH: str = "./output/audit_results.xlsx"
+    ECOM_OUTPUT_PATH: str = "./output/ecom_audit_results.xlsx"
     JADX_PATH: str = "jadx"
     APPIUM_SERVER_URL: str = "http://localhost:4723"
     ANDROID_APP_PACKAGE: Optional[str] = None

@@ -644,6 +644,20 @@ class CrawlExecutorAgent:
         except Exception as e:
             logger.warning(f"Error auto-dismissing popups: {e}")
 
+        # 1b. Splash close button matching content-desc="✕" or text="✕"
+        try:
+            for xpath in ['//*[@content-desc="✕"]', '//*[@text="✕"]']:
+                try:
+                    close_btn = self.driver.find_element(AppiumBy.XPATH, xpath)
+                    if close_btn and close_btn.is_displayed():
+                        logger.info("Auto-dismiss: Found splash/ad close button (✕). Dismissing...")
+                        close_btn.click()
+                        time.sleep(2.0)
+                except NoSuchElementException:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error auto-dismissing splash (✕): {e}")
+
         # 2. System permissions dialogs (Notification, Location)
         try:
             for btn_text in ["Allow", "While using the app", "Only this time"]:

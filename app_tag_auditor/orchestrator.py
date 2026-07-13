@@ -23,6 +23,15 @@ from agents.agent5_log_capture import LogCaptureAgent
 from agents.agent6_telemetry_validator import TelemetryValidatorAgent
 from agents.agent7_runtime_validator import RuntimeValidatorAgent
 from agents.agent8_validation_combiner import ValidationCombinerAgent
+import logging
+from agents.agent1b_ecom_schema_reader import EcomSchemaReaderAgent
+from agents.agent3b_ecom_crawl_planner import EcomCrawlPlannerAgent
+from agents.agent5b_ecom_log_capture import EcomLogCaptureAgent
+from agents.agent6b_ecom_telemetry_validator import EcomTelemetryValidatorAgent
+from agents.agent7b_ecom_runtime_validator import EcomRuntimeValidatorAgent
+from agents.agent8b_ecom_validation_combiner import EcomValidationCombinerAgent
+from core.models import (ExpectedEcomEvent, CapturedEcomLog, FinalEcomAuditRow,
+                         EcomTelemetryValidationResult, EcomRuntimeValidationResult)
 
 logger = get_logger(__name__)
 
@@ -98,6 +107,96 @@ class RuntimeAuditOrchestrator:
             if i < total - 1:
                 self.reset_best_effort()
         return captures
+
+
+class EcomAuditOrchestrator:
+    def __init__(self, crawl_executor, ecom_log_agent: EcomLogCaptureAgent,
+                 all_events: list[ExpectedEcomEvent]):
+        self.crawl_executor = crawl_executor
+        self.ecom_log_agent = ecom_log_agent
+        self.all_events = all_events
+        self.logger = get_logger(__name__)
+        self._telemetry_validator = EcomTelemetryValidatorAgent()
+        self._runtime_validator   = EcomRuntimeValidatorAgent()
+        self._combiner            = EcomValidationCombinerAgent()
+
+    def run_single_event(self, event: ExpectedEcomEvent,
+                         plan: CrawlPlan) -> FinalEcomAuditRow:
+        if not plan.navigation_resolved:
+            self.logger.warning(
+                f"Skipping ecom event '{event.event_name}' — crawl plan unresolved. "
+                f"Fill in ecom_crawl_map.json to enable this event."
+            )
+            telemetry = EcomTelemetryValidationResult(
+                event_name=event.event_name, passed=False,
+                missing_event_keys=event.event_param_names,
+                extra_event_keys=[], mismatched_event_keys=[],
+                item_count_found=0, item_count_expected_min=event.min_items,
+                item_count_passed=False,
+                items_with_missing_keys=[], items_with_type_errors=[],
+                items_with_custom_params=[], items_with_discount_revenue_errors=[]
+            )
+            runtime = EcomRuntimeValidationResult(
+                event_name=event.event_name, passed=False,
+                fire_count=0, not_implemented=True, double_fired=False,
+                notes="Crawl plan unresolved — event was not triggered."
+            )
+            return self._combiner.combine_event(event, telemetry, runtime,
+                                                crawl_resolved=False)
+
+        ecom_names = {e.event_name for e in self.all_events}
+        self.ecom_log_agent.start_capture(ecom_names)
+
+        try:
+            self.crawl_executor.execute_plan(plan)
+        except Exception as e:
+            self.logger.error(f"Crawl execution failed for '{event.event_name}': {e}")
+
+        time.sleep(get_settings().RUNTIME_CAPTURE_BUFFER_SECONDS)
+        self.ecom_log_agent.stop_capture()
+        captured_logs = self.ecom_log_agent.get_captured_logs()
+
+        self.logger.info(
+            f"Captured {len(captured_logs)} ecom log(s) for '{event.event_name}'."
+        )
+
+        telemetry = self._telemetry_validator.validate_event(event, captured_logs)
+        runtime   = self._runtime_validator.validate_event(event, captured_logs)
+        return self._combiner.combine_event(event, telemetry, runtime,
+                                            crawl_resolved=True)
+
+    def reset_best_effort(self) -> None:
+        if self.crawl_executor.driver is None:
+            return
+        for attempt in range(3):
+            try:
+                self.crawl_executor.driver.back()
+                time.sleep(1)
+            except Exception as e:
+                self.logger.warning(f"Reset attempt {attempt+1} failed: {e}")
+                break
+
+    def run_full_audit(self, events: list[ExpectedEcomEvent],
+                       plans: list[CrawlPlan],
+                       log_callback=None) -> list[FinalEcomAuditRow]:
+        plan_lookup = {p.event_name: p for p in plans}
+        rows = []
+        for i, event in enumerate(events):
+            plan = plan_lookup.get(event.event_name)
+            if plan is None:
+                self.logger.error(
+                    f"No plan for ecom event '{event.event_name}' — skipping."
+                )
+                continue
+            msg = f"Running ecom audit: event {i+1} of {len(events)} ({event.event_name})"
+            self.logger.info(msg)
+            if log_callback: log_callback(msg)
+            row = self.run_single_event(event, plan)
+            rows.append(row)
+            if i < len(events) - 1:
+                self.reset_best_effort()
+        return rows
+
 
 def run_pipeline(apk_path: str, sheet_id: str | None = None, credentials: Any = None, schema_path: str = "schemas/sample_schema.csv", interaction_bridge=None) -> None:
     logger.info(f"Starting pipeline for APK: {apk_path}")
@@ -223,6 +322,103 @@ def _run_synthetic_dry_run(expected_events: list, writer: LocalExcelWriter) -> N
     all_tele = tele_val.run(expected_events, mock_logs)
     all_run = [run_val.validate_execution(e.event_name, e.screen, CrawlPlan(event_name=e.event_name, screen=e.screen, steps=[CrawlStep(action_type="tap", target_selector="Mock", step_order=0)]), True, e.user_action) for e in expected_events]
     ValidationCombinerAgent().run(expected_events, all_tele, all_run, [], writer)
+
+
+def run_ecom_pipeline(apk_path: str, log_callback=None) -> None:
+    def _log(msg: str):
+        logging.getLogger(__name__).info(msg)
+        if log_callback: log_callback(msg)
+
+    try:
+        _log("Loading GA4 ecommerce event config (14 events)...")
+        events = EcomSchemaReaderAgent().run()
+        _log(f"Loaded {len(events)} ecom events.")
+
+        _log("Building ecom crawl plans from ecom_crawl_map.json...")
+        plans = EcomCrawlPlannerAgent().run(events)
+        resolved = sum(1 for p in plans if p.navigation_resolved)
+        _log(f"Crawl plans: {resolved} resolved, {len(plans)-resolved} skipped "
+             f"(fill in ecom_crawl_map.json to enable skipped events).")
+
+        _log("Connecting to Appium and initialising crawl executor...")
+        
+        settings = get_settings()
+        if not settings.ANDROID_APP_PACKAGE:
+            _log("ANDROID_APP_PACKAGE not defined in settings. Attempting auto-detection...")
+            detected_pkg = None
+            
+            # Strategy 1: Try aapt
+            try:
+                res = subprocess.run(["aapt", "dump", "badging", apk_path], capture_output=True, text=True, errors="ignore")
+                if res.returncode == 0:
+                    match = re.search(r"package: name='([^']+)'", res.stdout)
+                    if match:
+                        detected_pkg = match.group(1)
+            except Exception:
+                pass
+
+            # Strategy 2: Try JADX manifest parsing
+            if not detected_pkg:
+                _log("aapt auto-detection failed. Attempting JADX decompilation to parse AndroidManifest.xml...")
+                try:
+                    decompiled_sources = ApkDecompiler().decompile(apk_path)
+                    cache_dir = os.path.dirname(decompiled_sources)
+                    candidate_manifests = [
+                        os.path.join(cache_dir, "AndroidManifest.xml"),
+                        os.path.join(cache_dir, "resources", "AndroidManifest.xml"),
+                        os.path.join(decompiled_sources, "AndroidManifest.xml"),
+                    ]
+                    for root, _, files in os.walk(cache_dir):
+                        for fname in files:
+                            if fname == "AndroidManifest.xml":
+                                candidate_manifests.append(os.path.join(root, fname))
+
+                    for manifest_path in candidate_manifests:
+                        if os.path.exists(manifest_path):
+                            with open(manifest_path, "r", encoding="utf-8") as f:
+                                content = f.read()
+                            match = re.search(r'package="([^"]+)"', content)
+                            if match:
+                                pkg = match.group(1)
+                                if pkg and not pkg.startswith("android"):
+                                    detected_pkg = pkg
+                                    break
+                except Exception as e:
+                    _log(f"JADX decompilation failed: {e}")
+
+            if detected_pkg:
+                settings.ANDROID_APP_PACKAGE = detected_pkg
+                _log(f"Successfully auto-detected ANDROID_APP_PACKAGE: {detected_pkg}")
+            else:
+                raise ValueError(
+                    "ANDROID_APP_PACKAGE could not be auto-detected from the APK. "
+                    "Please set it manually in your .env file (e.g. ANDROID_APP_PACKAGE=com.example.app)."
+                )
+
+        crawl_executor = CrawlExecutorAgent(apk_path=apk_path, app_package=settings.ANDROID_APP_PACKAGE)
+        crawl_executor._build_driver()
+
+        ecom_log_agent = EcomLogCaptureAgent()
+        orchestrator   = EcomAuditOrchestrator(crawl_executor, ecom_log_agent, events)
+
+        _log("Starting ecom audit run...")
+        rows = orchestrator.run_full_audit(events, plans, log_callback=log_callback)
+
+        _log("Writing ecom results to output file...")
+        output_path = EcomValidationCombinerAgent().write_to_output(rows)
+        _log(f"Ecom audit complete. Results written to: {output_path}")
+
+    except Exception as e:
+        msg = f"Ecom pipeline failed: {e}"
+        logging.getLogger(__name__).error(msg, exc_info=True)
+        if log_callback: log_callback(msg)
+        raise
+    finally:
+        try:
+            crawl_executor.quit()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     device_connected = False

@@ -1,0 +1,51 @@
+{
+  "view_item_list": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "content_desc", "step_order": 0},
+    {"action_type": "tap", "target_selector": "BRAS", "value": null, "selector_strategy": "content_desc", "step_order": 1},
+    {"action_type": "tap", "target_selector": "ALL BRAS     ", "value": null, "selector_strategy": "content_desc", "step_order": 2}
+  ],
+  "select_item": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "content_desc", "step_order": 0},
+    {"action_type": "tap", "target_selector": "BRAS", "value": null, "selector_strategy": "content_desc", "step_order": 1},
+    {"action_type": "tap", "target_selector": "ALL BRAS     ", "value": null, "selector_strategy": "content_desc", "step_order": 2},
+    {"action_type": "swipe", "target_selector": "", "value": null, "selector_strategy": "text", "step_order": 3},
+    {"action_type": "tap", "target_selector": "The T-shirt, Cotton Exploded Logo Lightly Lined Wireless Bra, ₹7049, Buy 1 at 20% Off, Buy 2 at 25% Off", "value": null, "selector_strategy": "content_desc", "step_order": 4}
+  ],
+  "view_item": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "content_desc", "step_order": 0},
+    {"action_type": "tap", "target_selector": "BRAS", "value": null, "selector_strategy": "content_desc", "step_order": 1},
+    {"action_type": "tap", "target_selector": "ALL BRAS     ", "value": null, "selector_strategy": "content_desc", "step_order": 2},
+    {"action_type": "swipe", "target_selector": "", "value": null, "selector_strategy": "text", "step_order": 3},
+    {"action_type": "tap", "target_selector": "The T-shirt, Cotton Exploded Logo Lightly Lined Wireless Bra, ₹7049, Buy 1 at 20% Off, Buy 2 at 25% Off", "value": null, "selector_strategy": "content_desc", "step_order": 4}
+  ],
+  "add_to_cart": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "content_desc", "step_order": 0},
+    {"action_type": "tap", "target_selector": "BRAS", "value": null, "selector_strategy": "content_desc", "step_order": 1},
+    {"action_type": "tap", "target_selector": "ALL BRAS     ", "value": null, "selector_strategy": "content_desc", "step_order": 2},
+    {"action_type": "swipe", "target_selector": "", "value": null, "selector_strategy": "text", "step_order": 3},
+    {"action_type": "tap", "target_selector": "The T-shirt, Cotton Exploded Logo Lightly Lined Wireless Bra, ₹7049, Buy 1 at 20% Off, Buy 2 at 25% Off", "value": null, "selector_strategy": "content_desc", "step_order": 4},
+    {"action_type": "tap", "target_selector": "Select Size", "value": null, "selector_strategy": "content_desc", "step_order": 5},
+    {"action_type": "tap", "target_selector": "34", "value": null, "selector_strategy": "content_desc", "step_order": 6},
+    {"action_type": "tap", "target_selector": "B", "value": null, "selector_strategy": "content_desc", "step_order": 7},
+    {"action_type": "tap", "target_selector": "SAVE", "value": null, "selector_strategy": "text", "step_order": 8},
+    {"action_type": "tap", "target_selector": "ADD TO BAG", "value": null, "selector_strategy": "content_desc", "step_order": 9}
+  ],
+  "add_to_wishlist": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "content_desc", "step_order": 0},
+    {"action_type": "tap", "target_selector": "BRAS", "value": null, "selector_strategy": "content_desc", "step_order": 1},
+    {"action_type": "tap", "target_selector": "ALL BRAS     ", "value": null, "selector_strategy": "content_desc", "step_order": 2},
+    {"action_type": "swipe", "target_selector": "", "value": null, "selector_strategy": "text", "step_order": 3},
+    {"action_type": "tap", "target_selector": "The T-shirt, Cotton Exploded Logo Lightly Lined Wireless Bra, ₹7049, Buy 1 at 20% Off, Buy 2 at 25% Off", "value": null, "selector_strategy": "content_desc", "step_order": 4}
+  ],
+  "view_cart": [
+    {"action_type": "tap", "target_selector": "Shop", "value": null, "selector_strategy": "content_desc", "step_order": 0}
+  ],
+  "remove_from_cart": [],
+  "begin_checkout": [],
+  "add_shipping_info": [],
+  "add_payment_info": [],
+  "purchase": [],
+  "refund": [],
+  "view_promotion": [],
+  "select_promotion": []
+}

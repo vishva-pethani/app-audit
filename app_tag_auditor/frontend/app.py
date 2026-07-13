@@ -51,7 +51,7 @@ from core.config import get_settings
 from core.drive_client import DriveClient
 from core.sheets_client import SheetsClient
 import frontend.components.drive_picker as drive_picker
-from orchestrator import run_pipeline
+from orchestrator import run_pipeline, run_ecom_pipeline
 
 st.set_page_config(
     page_title="App Tag Auditor",
@@ -626,13 +626,16 @@ if st.session_state.get("pipeline_running"):
         st.rerun()
         
     # Read any new logs
-    while log_queue and not log_queue.empty():
-        try:
-            msg = log_queue.get_nowait()
-            log_buffer.append(msg)
-        except Exception:
-            break
-    st.session_state["log_buffer"] = log_buffer
+    if log_queue:
+        while not log_queue.empty():
+            try:
+                msg = log_queue.get_nowait()
+                log_buffer.append(msg)
+            except Exception:
+                break
+        st.session_state["log_buffer"] = log_buffer
+    else:
+        st.session_state["log_buffer"] = st.session_state.get("pipeline_logs_ref", [])
     
     st.markdown('<div class="step-card" style="border-left-color: #7f00c6 !important; background: rgba(127,0,198,0.03) !important;"><h4>⏳ Pipeline Executing</h4><p>The automated audit pipeline is running on the connected Android device. Real-time telemetry logs are displaying below.</p></div>', unsafe_allow_html=True)
     
@@ -848,6 +851,13 @@ class PipelineThread(threading.Thread):
 
 st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.05); margin: 1.5rem 0;">', unsafe_allow_html=True)
 
+audit_mode = st.radio(
+    "Select Audit Mode",
+    ["Custom Events", "Ecommerce Events"],
+    horizontal=True,
+    key="audit_mode"
+)
+
 # Two-column layout for file selections
 col1, col2 = st.columns(2)
 
@@ -879,167 +889,265 @@ with col1:
 
 with col2:
     st.markdown('<h3 style="color: #ff8f00;">📊 Event Schema Sheet</h3>', unsafe_allow_html=True)
-    schema_source = st.radio("Select Schema Source", ["Local Upload", "Google Sheets URL"], key="schema_source")
+    if audit_mode == "Custom Events":
+        schema_source = st.radio("Select Schema Source", ["Local Upload", "Google Sheets URL"], key="schema_source")
     
-    if schema_source == "Local Upload":
-        uploaded_schema = st.file_uploader("Upload Schema file (CSV or Excel)", type=["csv", "xlsx", "xls"])
-        if uploaded_schema is not None:
-            settings = get_settings()
-            temp_dir = settings.TEMP_STORAGE_DIR
-            os.makedirs(temp_dir, exist_ok=True)
-            local_schema_path = os.path.join(temp_dir, uploaded_schema.name)
-            with open(local_schema_path, "wb") as f:
-                f.write(uploaded_schema.getbuffer())
-            st.session_state["schema_path"] = local_schema_path
-            st.success(f"✅ Loaded Local Schema: `{uploaded_schema.name}`")
-    else:
-        schema_url = st.text_input("Paste Google Sheet URL", value="", key="schema_url")
-        token = st.session_state.get("google_auth_token")
-        
-        if not token:
-            token = drive_picker.render_google_auth(
-                key="sheet_url_auth",
-                label="🔑 Connect Google Account"
-            )
-            if token:
-                st.session_state["google_auth_token"] = token
-                st.rerun()
-            
-        if token:
-            if schema_url:
-                st.success("✅ Google Account Connected & Sheet URL Ready")
+        if schema_source == "Local Upload":
+            uploaded_schema = st.file_uploader("Upload Schema file (CSV or Excel)", type=["csv", "xlsx", "xls"])
+            if uploaded_schema is not None:
+                settings = get_settings()
+                temp_dir = settings.TEMP_STORAGE_DIR
+                os.makedirs(temp_dir, exist_ok=True)
+                local_schema_path = os.path.join(temp_dir, uploaded_schema.name)
+                with open(local_schema_path, "wb") as f:
+                    f.write(uploaded_schema.getbuffer())
+                st.session_state["schema_path"] = local_schema_path
+                st.success(f"✅ Loaded Local Schema: `{uploaded_schema.name}`")
         else:
-            if schema_url:
-                st.warning("⚠️ Please connect your Google Account using the button above to download the sheet.")
+            schema_url = st.text_input("Paste Google Sheet URL", value="", key="schema_url")
+            token = st.session_state.get("google_auth_token")
+            
+            if not token:
+                token = drive_picker.render_google_auth(
+                    key="sheet_url_auth",
+                    label="🔑 Connect Google Account"
+                )
+                if token:
+                    st.session_state["google_auth_token"] = token
+                    st.rerun()
+                
+            if token:
+                if schema_url:
+                    st.success("✅ Google Account Connected & Sheet URL Ready")
+            else:
+                if schema_url:
+                    st.warning("⚠️ Please connect your Google Account using the button above to download the sheet.")
+    else:
+        st.info(
+          "🛒 Using built-in GA4 standard ecommerce config (14 events). "
+          "Before running, fill in schemas/ecom_crawl_map.json with your "
+          "app's actual UI selectors to replace the FILL_IN_* placeholders."
+        )
 
 # Run Pipeline Action Section
 st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
 
-if st.button("🚀 Run Analytics Audit Pipeline", use_container_width=True):
-    # Determine the paths
-    apk_path = st.session_state.get("apk_path")
-    schema_path = st.session_state.get("schema_path")
-    
-    # Check if we need to download from Google Drive first
-    download_success = True
-    temp_dir = get_settings().TEMP_STORAGE_DIR
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    if apk_source == "Google Drive Picker":
-        apk_drive = st.session_state.get("apk_drive")
-        if not apk_drive:
-            st.error("Please pick an APK from Google Drive.")
-            download_success = False
-        else:
-            with st.spinner(f"📥 Downloading APK from Google Drive: {apk_drive['file_name']}..."):
-                try:
-                    creds = Credentials(token=apk_drive["access_token"])
-                    drive_client = DriveClient(credentials=creds)
-                    dest_apk_path = os.path.join(temp_dir, apk_drive["file_name"])
-                    drive_client.download_file(apk_drive["file_id"], dest_apk_path)
-                    apk_path = dest_apk_path
-                except Exception as e:
-                    st.error(f"Failed to download APK: {e}")
-                    download_success = False
+button_label = (
+  "🚀 Run Analytics Audit Pipeline"
+  if audit_mode == "Custom Events"
+  else "🛒 Run Ecommerce Audit Pipeline"
+)
 
-    if schema_source == "Google Sheets URL" and download_success:
-        schema_url = st.session_state.get("schema_url")
-        if not schema_url:
-            st.error("Please paste the Google Sheet URL.")
-            download_success = False
-        else:
-            token = st.session_state.get("google_auth_token") or (st.session_state.get("apk_drive") or {}).get("access_token")
-            if not token:
-                st.error("Google authentication token is missing. Please authorize your Google Account first.")
+if st.button(button_label, use_container_width=True):
+    if audit_mode == "Custom Events":
+        # Determine the paths
+        apk_path = st.session_state.get("apk_path")
+        schema_path = st.session_state.get("schema_path")
+        
+        # Check if we need to download from Google Drive first
+        download_success = True
+        temp_dir = get_settings().TEMP_STORAGE_DIR
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        if apk_source == "Google Drive Picker":
+            apk_drive = st.session_state.get("apk_drive")
+            if not apk_drive:
+                st.error("Please pick an APK from Google Drive.")
                 download_success = False
             else:
-                with st.spinner("📥 Downloading Google Sheet from URL..."):
+                with st.spinner(f"📥 Downloading APK from Google Drive: {apk_drive['file_name']}..."):
                     try:
-                        sheet_id = SheetsClient.extract_sheet_id_from_url(schema_url)
-                        creds = Credentials(token=token)
-                        sheets_client = SheetsClient(credentials=creds)
-                        dest_sheet_path = os.path.join(temp_dir, f"sheet_{sheet_id}.xlsx")
-                        sheets_client.download_sheet_as_excel(sheet_id, dest_sheet_path)
-                        schema_path = dest_sheet_path
+                        creds = Credentials(token=apk_drive["access_token"])
+                        drive_client = DriveClient(credentials=creds)
+                        dest_apk_path = os.path.join(temp_dir, apk_drive["file_name"])
+                        drive_client.download_file(apk_drive["file_id"], dest_apk_path)
+                        apk_path = dest_apk_path
+                        st.session_state["apk_path"] = apk_path
                     except Exception as e:
-                        st.error(f"Failed to download Google Sheet: {e}")
+                        st.error(f"Failed to download APK: {e}")
                         download_success = False
 
-    if not apk_path:
-        st.error("Missing target APK file.")
-        download_success = False
-    if not schema_path:
-        st.error("Missing event schema file.")
-        download_success = False
+        if schema_source == "Google Sheets URL" and download_success:
+            schema_url = st.session_state.get("schema_url")
+            if not schema_url:
+                st.error("Please paste the Google Sheet URL.")
+                download_success = False
+            else:
+                token = st.session_state.get("google_auth_token") or (st.session_state.get("apk_drive") or {}).get("access_token")
+                if not token:
+                    st.error("Google authentication token is missing. Please authorize your Google Account first.")
+                    download_success = False
+                else:
+                    with st.spinner("📥 Downloading Google Sheet from URL..."):
+                        try:
+                            sheet_id = SheetsClient.extract_sheet_id_from_url(schema_url)
+                            creds = Credentials(token=token)
+                            sheets_client = SheetsClient(credentials=creds)
+                            dest_sheet_path = os.path.join(temp_dir, f"sheet_{sheet_id}.xlsx")
+                            sheets_client.download_sheet_as_excel(sheet_id, dest_sheet_path)
+                            schema_path = dest_sheet_path
+                            st.session_state["schema_path"] = schema_path
+                        except Exception as e:
+                            st.error(f"Failed to download Google Sheet: {e}")
+                            download_success = False
 
-    if download_success:
-        # Setup logging redirection to Streamlit UI via queue
-        log_queue = queue.Queue()
-        root_logger = logging.getLogger()
-        handler = StreamlitLogHandler(log_queue)
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        old_level = root_logger.level
-        root_logger.setLevel(logging.INFO)
-        root_logger.addHandler(handler)
+        if not apk_path:
+            st.error("Missing target APK file.")
+            download_success = False
+        if not schema_path:
+            st.error("Missing event schema file.")
+            download_success = False
+
+        if download_success:
+            # Setup logging redirection to Streamlit UI via queue
+            log_queue = queue.Queue()
+            root_logger = logging.getLogger()
+            handler = StreamlitLogHandler(log_queue)
+            handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            old_level = root_logger.level
+            root_logger.setLevel(logging.INFO)
+            root_logger.addHandler(handler)
+            
+            st.session_state["pipeline_completed"] = False
+            st.session_state["pipeline_error"] = None
+            st.session_state["log_queue"] = log_queue
+            st.session_state["log_buffer"] = []
+            st.session_state["streamlit_log_handler"] = handler
+            st.session_state["old_log_level"] = old_level
+            
+            # Start pipeline execution in background thread with InteractionBridge
+            bridge = InteractionBridge()
+            st.session_state["interaction_bridge"] = bridge
+            
+            thread = PipelineThread(apk_path=apk_path, schema_path=schema_path, interaction_bridge=bridge)
+            thread.start()
+            st.session_state["pipeline_thread"] = thread
+            st.session_state["pipeline_running"] = True
+            st.rerun()
+
+    elif audit_mode == "Ecommerce Events":
+        apk_path = st.session_state.get("apk_path")
         
-        st.session_state["pipeline_completed"] = False
-        st.session_state["pipeline_error"] = None
-        st.session_state["log_queue"] = log_queue
-        st.session_state["log_buffer"] = []
-        st.session_state["streamlit_log_handler"] = handler
-        st.session_state["old_log_level"] = old_level
+        # Check if we need to download from Google Drive first
+        download_success = True
+        temp_dir = get_settings().TEMP_STORAGE_DIR
+        os.makedirs(temp_dir, exist_ok=True)
         
-        # Start pipeline execution in background thread with InteractionBridge
-        bridge = InteractionBridge()
-        st.session_state["interaction_bridge"] = bridge
-        
-        thread = PipelineThread(apk_path=apk_path, schema_path=schema_path, interaction_bridge=bridge)
-        thread.start()
-        st.session_state["pipeline_thread"] = thread
-        st.session_state["pipeline_running"] = True
-        st.rerun()
+        if apk_source == "Google Drive Picker":
+            apk_drive = st.session_state.get("apk_drive")
+            if not apk_drive:
+                st.error("Please pick an APK from Google Drive.")
+                download_success = False
+            else:
+                with st.spinner(f"📥 Downloading APK from Google Drive: {apk_drive['file_name']}..."):
+                    try:
+                        creds = Credentials(token=apk_drive["access_token"])
+                        drive_client = DriveClient(credentials=creds)
+                        dest_apk_path = os.path.join(temp_dir, apk_drive["file_name"])
+                        drive_client.download_file(apk_drive["file_id"], dest_apk_path)
+                        apk_path = dest_apk_path
+                        st.session_state["apk_path"] = apk_path
+                    except Exception as e:
+                        st.error(f"Failed to download APK: {e}")
+                        download_success = False
+
+        if not apk_path:
+            st.error("Missing target APK file.")
+            download_success = False
+
+        if download_success:
+            st.session_state["pipeline_completed"] = False
+            st.session_state["pipeline_error"] = None
+            st.session_state["log_queue"] = None
+            st.session_state["log_buffer"] = []
+            
+            # Pass values safely to the thread without accessing st.session_state inside the thread
+            extracted_apk_path = st.session_state["apk_path"]
+            shared_logs = []
+            st.session_state["pipeline_logs_ref"] = shared_logs
+            
+            def _run_ecom():
+                try:
+                    run_ecom_pipeline(
+                        apk_path=extracted_apk_path,
+                        log_callback=shared_logs.append
+                    )
+                except Exception as e:
+                    t.exception = e
+
+            t = threading.Thread(target=_run_ecom, daemon=True)
+            t.exception = None
+            st.session_state["crawl_thread"] = t
+            st.session_state["pipeline_thread"] = t
+            st.session_state["pipeline_running"] = True
+            t.start()
+            st.rerun()
 
 # Display final results if they exist and pipeline was completed successfully in this session
 settings = get_settings()
 output_path = settings.LOCAL_OUTPUT_PATH
+ecom_output_path = settings.ECOM_OUTPUT_PATH
 
 if st.session_state.get("pipeline_error"):
     st.error(f"❌ Pipeline execution failed: {st.session_state['pipeline_error']}")
 
-if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
+# Decide whether to show results based on mode
+show_results = False
+if audit_mode == "Custom Events":
+    show_results = st.session_state.get("pipeline_completed") and os.path.exists(output_path)
+else:
+    show_results = st.session_state.get("pipeline_completed") and os.path.exists(ecom_output_path)
+
+if show_results:
     st.markdown('<hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 2rem 0;">', unsafe_allow_html=True)
     st.markdown('<h3 style="color: #ff8f00;">📊 Audit Results Report</h3>', unsafe_allow_html=True)
     
-    # Determine the output download filename dynamically based on the input schema name
-    schema_source = st.session_state.get("schema_source")
-    given_sheet_name = "results"
-    if schema_source == "Google Sheets URL":
-        schema_url = st.session_state.get("schema_url")
-        if schema_url:
-            given_sheet_name = SheetsClient.extract_sheet_id_from_url(schema_url)
-    else:
-        schema_path = st.session_state.get("schema_path")
-        if schema_path:
-            given_sheet_name = os.path.splitext(os.path.basename(schema_path))[0]
-            
-    export_filename = f"audit_result_{given_sheet_name}.xlsx"
+    active_output_path = output_path if audit_mode == "Custom Events" else ecom_output_path
+    
+    if audit_mode == "Custom Events":
+        # Determine the output download filename dynamically based on the input schema name
+        schema_source = st.session_state.get("schema_source")
+        given_sheet_name = "results"
+        if schema_source == "Google Sheets URL":
+            schema_url = st.session_state.get("schema_url")
+            if schema_url:
+                given_sheet_name = SheetsClient.extract_sheet_id_from_url(schema_url)
+        else:
+            schema_path = st.session_state.get("schema_path")
+            if schema_path:
+                given_sheet_name = os.path.splitext(os.path.basename(schema_path))[0]
+                
+        export_filename = f"audit_result_{given_sheet_name}.xlsx"
 
-    with open(output_path, "rb") as f:
-        st.download_button(
-            label="📥 Download Generated Excel Report",
-            data=f,
-            file_name=export_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+        with open(output_path, "rb") as f:
+            st.download_button(
+                label="📥 Download Generated Excel Report",
+                data=f,
+                file_name=export_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+    elif audit_mode == "Ecommerce Events":
+        export_filename = "ecom_audit_results.xlsx"
+        if os.path.exists(ecom_output_path):
+            with open(ecom_output_path, "rb") as f:
+                st.download_button(
+                    "📥 Download Ecommerce Audit Results (.xlsx)",
+                    data=f.read(),
+                    file_name=export_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        else:
+            st.warning("Ecom output file not found — pipeline may not have completed.")
 
     # Let's read and display the tabs from output excel file
     try:
-        xl = pd.ExcelFile(output_path)
+        xl = pd.ExcelFile(active_output_path)
         sheet_names = xl.sheet_names
         
         # Sort sheet names so Audit Summary and Audit Analysis are shown first
-        preferred_order = ["Audit Summary", "Audit Analysis"]
+        preferred_order = ["Audit Summary", "Audit Analysis", "EcomAudit"]
         sorted_sheet_names = [s for s in preferred_order if s in sheet_names] + [s for s in sheet_names if s not in preferred_order]
         
         # Hidden text area for React-based WebSocket updates (prevents page reloads)
@@ -1066,79 +1174,80 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
                 active_sheet = data.get("sheet")
                 rows = data.get("rows", {})
                 
-                wb = openpyxl.load_workbook(output_path)
+                wb = openpyxl.load_workbook(active_output_path)
                 if active_sheet in wb.sheetnames:
                     ws = wb[active_sheet]
                     headers = [cell.value for cell in ws[1]]
-                    status_col_idx = headers.index("Status") + 1
-                    comments_col_idx = headers.index("Comments") + 1
-                    logs_col_idx = headers.index("Logs") + 1
-                    
-                    font_family = "Segoe UI"
-                    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-                    green_font = Font(name=font_family, size=10, bold=True, color="375623")
-                    yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-                    yellow_font = Font(name=font_family, size=10, bold=True, color="7F6000")
-                    red_fill = PatternFill(start_color="FADBD8", end_color="FADBD8", fill_type="solid")
-                    red_font = Font(name=font_family, size=10, bold=True, color="78281F")
-                    gray_fill = PatternFill(start_color="EAECEE", end_color="EAECEE", fill_type="solid")
-                    gray_font = Font(name=font_family, size=10, bold=True, color="5D6D7E")
-                    
-                    for row_str, changes in rows.items():
-                        row_idx = int(row_str)
-                        excel_row = row_idx + 2
+                    if "Status" in headers and "Comments" in headers and "Logs" in headers:
+                        status_col_idx = headers.index("Status") + 1
+                        comments_col_idx = headers.index("Comments") + 1
+                        logs_col_idx = headers.index("Logs") + 1
                         
-                        if "status" in changes:
-                            val = changes["status"]
-                            cell = ws.cell(row=excel_row, column=status_col_idx, value=val)
-                            if val == "Implemented":
-                                cell.fill = green_fill
-                                cell.font = green_font
-                            elif val == "Implemented with issues":
-                                cell.fill = yellow_fill
-                                cell.font = yellow_font
-                            elif val == "Scenario Not Found":
-                                cell.fill = gray_fill
-                                cell.font = gray_font
-                            else:
-                                cell.fill = red_fill
-                                cell.font = red_font
-                                
-                        if "comments" in changes:
-                            ws.cell(row=excel_row, column=comments_col_idx, value=changes["comments"])
+                        font_family = "Segoe UI"
+                        green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+                        green_font = Font(name=font_family, size=10, bold=True, color="375623")
+                        yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+                        yellow_font = Font(name=font_family, size=10, bold=True, color="7F6000")
+                        red_fill = PatternFill(start_color="FADBD8", end_color="FADBD8", fill_type="solid")
+                        red_font = Font(name=font_family, size=10, bold=True, color="78281F")
+                        gray_fill = PatternFill(start_color="EAECEE", end_color="EAECEE", fill_type="solid")
+                        gray_font = Font(name=font_family, size=10, bold=True, color="5D6D7E")
+                        
+                        for row_str, changes in rows.items():
+                            row_idx = int(row_str)
+                            excel_row = row_idx + 2
                             
-                        if "logs" in changes:
-                            ws.cell(row=excel_row, column=logs_col_idx, value=changes["logs"])
-                    
-                    # Recalculate summary tab counts
-                    if "Audit Summary" in wb.sheetnames:
-                        ws_summary = wb["Audit Summary"]
-                        implemented_count = 0
-                        implemented_with_issues_count = 0
-                        not_implemented_count = 0
-                        scenario_not_found_count = 0
-                        
-                        for r in range(2, ws.max_row + 1):
-                            val = ws.cell(row=r, column=status_col_idx).value
-                            if val == "Implemented":
-                                implemented_count += 1
-                            elif val == "Implemented with issues":
-                                implemented_with_issues_count += 1
-                            elif val == "Scenario Not Found":
-                                scenario_not_found_count += 1
-                            else:
-                                not_implemented_count += 1
+                            if "status" in changes:
+                                val = changes["status"]
+                                cell = ws.cell(row=excel_row, column=status_col_idx, value=val)
+                                if val == "Implemented":
+                                    cell.fill = green_fill
+                                    cell.font = green_font
+                                elif val == "Implemented with issues":
+                                    cell.fill = yellow_fill
+                                    cell.font = yellow_font
+                                elif val == "Scenario Not Found":
+                                    cell.fill = gray_fill
+                                    cell.font = gray_font
+                                else:
+                                    cell.fill = red_fill
+                                    cell.font = red_font
+                                    
+                            if "comments" in changes:
+                                ws.cell(row=excel_row, column=comments_col_idx, value=changes["comments"])
                                 
-                        ws_summary["B5"] = implemented_count
-                        ws_summary["B6"] = implemented_with_issues_count
-                        ws_summary["B7"] = not_implemented_count
-                        ws_summary["B8"] = scenario_not_found_count
+                            if "logs" in changes:
+                                ws.cell(row=excel_row, column=logs_col_idx, value=changes["logs"])
                         
-                    wb.save(output_path)
+                        # Recalculate summary tab counts
+                        if "Audit Summary" in wb.sheetnames:
+                            ws_summary = wb["Audit Summary"]
+                            implemented_count = 0
+                            implemented_with_issues_count = 0
+                            not_implemented_count = 0
+                            scenario_not_found_count = 0
+                            
+                            for r in range(2, ws.max_row + 1):
+                                val = ws.cell(row=r, column=status_col_idx).value
+                                if val == "Implemented":
+                                    implemented_count += 1
+                                elif val == "Implemented with issues":
+                                    implemented_with_issues_count += 1
+                                elif val == "Scenario Not Found":
+                                    scenario_not_found_count += 1
+                                else:
+                                    not_implemented_count += 1
+                                    
+                            ws_summary["B5"] = implemented_count
+                            ws_summary["B6"] = implemented_with_issues_count
+                            ws_summary["B7"] = not_implemented_count
+                            ws_summary["B8"] = scenario_not_found_count
+                            
+                    wb.save(active_output_path)
                     st.success("💾 Changes saved successfully! Downloading updated report...")
                     
                     import base64
-                    with open(output_path, "rb") as f_excel:
+                    with open(active_output_path, "rb") as f_excel:
                         b64_data = base64.b64encode(f_excel.read()).decode()
                         
                     st.markdown(f"""
@@ -1158,7 +1267,7 @@ if st.session_state.get("pipeline_completed") and os.path.exists(output_path):
             st.session_state["hidden_edit_data_widget"] = ""
 
         # Sort sheet names so Audit Summary and Audit Analysis are shown first
-        preferred_order = ["Audit Summary", "Audit Analysis"]
+        preferred_order = ["Audit Summary", "Audit Analysis", "EcomAudit"]
         sorted_sheet_names = [s for s in preferred_order if s in sheet_names] + [s for s in sheet_names if s not in preferred_order]
         
         def render_html_table(df, is_summary=False, sheet_name=""):
@@ -1338,15 +1447,15 @@ if (typeof window.saveAuditEdits === 'undefined') {
             with tabs[i]:
                 if sheet_name == "Audit Summary":
                     try:
-                        df = pd.read_excel(output_path, sheet_name=sheet_name, header=3)
+                        df = pd.read_excel(active_output_path, sheet_name=sheet_name, header=3)
                         df = df.dropna(how="all")
                         st.markdown("#### 📊 App Tag Auditor - Audit Summary")
                         render_html_table(df, is_summary=True)
                     except Exception as e:
-                        df = pd.read_excel(output_path, sheet_name=sheet_name)
+                        df = pd.read_excel(active_output_path, sheet_name=sheet_name)
                         render_html_table(df, is_summary=True)
                 else:
-                    df = pd.read_excel(output_path, sheet_name=sheet_name)
+                    df = pd.read_excel(active_output_path, sheet_name=sheet_name)
                     df = df.fillna("")
                     st.markdown("##### 🔍 Audit Analysis & Verification")
                     render_html_table(df, is_summary=False, sheet_name=sheet_name)
